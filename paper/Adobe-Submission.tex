@@ -1,0 +1,93 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{setspace}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{titlesec}
+
+\setstretch{1.08}
+\hypersetup{colorlinks=true, linkcolor=black, urlcolor=blue, citecolor=black}
+\titleformat{\section}{\bfseries\large}{\thesection.}{0.5em}{}
+
+\begin{document}
+
+\begin{center}
+{\LARGE \textbf{Identifying Brand Effects under Opaque Conversational Targeting}}\\[0.3em]
+\end{center}
+
+\section{Motivation}
+
+Conversational GenAI creates a causal inference problem that standard A/B testing does not fully solve. The system first decides, using opaque recommendation logic, whether a focal product will be shown in a given session. The researcher can then randomize only an overlay that changes how that recommendation is expressed. Because realized treatment depends on both the system's latent assignment and the randomized overlay, the experiment does not automatically identify the population effect of the marketing intervention; it identifies, at best, the effect for the subset of sessions selected by the system.
+
+Adobe provides a particularly relevant setting for studying this problem. In a conversational product-discovery environment, Adobe may wish to test whether adding a short brand module to a product recommendation improves brand perceptions and commercial outcomes. Yet the recommendation itself is already the result of endogenous platform targeting. Without accounting for that selection, the estimated effect of branded framing may be confounded with product relevance or ranking quality. This makes Adobe not only a practically important application, but also a natural empirical setting for a broader identification problem in AI-mediated marketing.
+
+This proposal studies one specific question: \textbf{when a conversational recommender surfaces a focal Adobe product recommendation, what is the causal effect of attaching an evidence-backed brand module to that recommendation on brand perceptions and downstream commercial outcomes?} The project is deliberately narrow. It does not attempt to estimate the return to all brand investments or all customer touchpoints. Instead, it isolates one tractable margin that fits the MSI--Adobe initiative: the incremental effect of brand expression at the moment of AI-mediated recommendation.
+
+\section{Generic Model and Why Randomizing One Layer Is Not Enough}
+
+Let $D_i \in \{0,1\}$ denote the system's latent recommendation decision for session $i$, where $D_i=1$ means that the conversational system would surface a focal product recommendation under its own opaque logic. Let $Z_i \in \{0,1\}$ denote the researcher's randomized overlay assignment, where $Z_i=1$ means that, if the focal recommendation appears, the response is allowed to include a standardized brand module. Realized exposure is therefore
+\[
+W_i = D_i Z_i.
+\]
+
+This distinction is essential. Randomizing $Z_i$ alone does \emph{not} randomize $D_i$. Some sessions assigned to overlay treatment never receive the brand module because the system never surfaces the focal product. Moreover, the sessions with $D_i=1$ may be selected precisely because the recommender predicts higher relevance, higher commercial value, or larger gains from intervention. As a result, a simple comparison by overlay assignment can mix together three forces: the incremental effect of brand framing, the platform's endogenous recommendation logic, and underlying differences in product fit across sessions.
+
+The treatment itself is concrete. The control recommendation contains a fixed functional description of the focal Adobe product. The treatment keeps the same product recommendation and functional content but adds a short brand module: one sentence stating the intended brand attribute and one supporting reason-to-believe. Because product identity is held fixed, the design isolates the incremental effect of brand marketing rather than the effect of ranking quality or product match.
+
+\section{Adobe as a Potential Application Context}
+
+Adobe is a strong setting for this question because the brand problem and the identification problem coincide. The MSI--Adobe call emphasizes causal models linking brand marketing, brand equity, and financial outcomes; experimental or quasi-experimental methods that isolate brand effects; and settings where generative AI improves measurement or identification rather than serving as decoration. This project speaks directly to that goal by using a conversational recommendation environment in which brand expression can be experimentally varied while downstream perceptions and commercial outcomes are measured.\footnote{\url{https://www.msi.org/2026-causal-pathways-and-metrics-for-brand-equity-and-financial-impact/}}
+
+A natural application is Adobe Brand Concierge or a related conversational product-discovery interface. In such an environment, Adobe may want to know whether a recommendation framed only in functional terms performs differently from the same recommendation supplemented with explicit brand meaning. The proposed design answers exactly that question. It also does so in a setting that Adobe cares about directly: AI-mediated product discovery, where recommendation exposure is partly controlled by the system and cannot simply be treated as randomized.
+
+\section{Point Identification First, Partial Identification Second}
+
+Point identification should come first because it is both the industry norm and the most immediately useful managerial object. Under randomized overlay assignment and one-sided receipt, the observable intent-to-treat effect is
+\[
+ITT(x)=E[Y_i\mid Z_i=1,X_i=x]-E[Y_i\mid Z_i=0,X_i=x],
+\]
+where $Y_i$ is the outcome of interest and $X_i$ denotes observed session or user covariates. Since $W_i=D_i$ whenever $Z_i=1$, the treatment rate in the eligible arm is
+\[
+p(x)=P(W_i=1\mid Z_i=1,X_i=x)=P(D_i=1\mid X_i=x).
+\]
+It follows that
+\[
+ITT(x)=E[D_i\tau_i\mid X_i=x],
+\]
+where $\tau_i$ is the causal effect of the brand module, and therefore
+\[
+\frac{ITT(x)}{p(x)} = E[\tau_i \mid D_i=1, X_i=x].
+\]
+
+This ratio point-identifies the average treatment effect for the sessions that the system would actually target. That is already a policy-relevant parameter. It tells Adobe whether branded framing works for the commercially relevant subpopulation selected by the recommender.
+
+A second point-identification result is available if Adobe can provide an excluded shifter that changes recommendation propensity without directly affecting outcomes conditional on observables. Candidate examples include a recommendation-confidence score, routing threshold, or other internal diagnostic that shifts the probability of surfacing the focal product but is otherwise excluded from the outcome equation. In that case, the design admits a local-IV style representation. Variation in the induced propensity score identifies a marginal treatment effect schedule and, under sufficient support, can recover the broader average treatment effect. This stronger point-identification route should be the primary empirical target whenever Adobe's platform data make it credible.
+
+Partial identification becomes necessary only when the stronger shifter is unavailable or the exclusion restriction is not persuasive. In that case, the passive overlay still reveals the selected-group effect above, but not the full population effect. Under a latent-index model in which the system weakly prioritizes sessions with larger gains from brand framing, and under the mild restriction that the treatment is not harmful on average at the relevant margin, the population average treatment effect can be bounded between the reduced-form effect and the selected-group effect:
+\[
+ITT(x) \le ATE(x) \le \frac{ITT(x)}{p(x)}.
+\]
+The value of partial identification here is not to replace point identification. It is to make transparent what can still be learned when recommendation logic remains partly opaque, which is a realistic feature of many conversational AI systems.
+
+\section{Data, Outcomes, and Contribution}
+
+The project requires session-level conversational logs, overlay assignment, realized exposure, the recommended product, response feedback, and downstream commercial outcomes such as click-through, trial starts, subscription conversion, or qualified pipeline. If available, Adobe would also provide recommendation diagnostics needed for the stronger point-identification strategy. The primary brand outcome would come from a short post-session survey measuring trust, distinctiveness, and clarity. Text-based coding of whether the response preserved the intended brand attribute would be used only as a secondary mechanism measure.
+
+The contribution to practice is direct. Adobe wants to understand whether brand-oriented expression inside conversational recommendation creates incremental value beyond neutral functional guidance. The proposed design provides a deployable framework for answering that question while respecting the reality that recommendation exposure is itself endogenous. The academic contribution is equally clear: the project brings a generic causal inference problem---identification under opaque targeting with randomized overlays---into a live brand-marketing application that matters for both theory and practice.
+
+\section*{References}
+
+\noindent Heckman, James J., and Edward J. Vytlacil. 2005. ``Structural Equations, Treatment Effects, and Econometric Policy Evaluation.'' \textit{Econometrica} 73 (3): 669--738.
+
+\noindent Keller, Kevin Lane. 1993. ``Conceptualizing, Measuring, and Managing Customer-Based Brand Equity.'' \textit{Journal of Marketing} 57 (1): 1--22.
+
+\noindent Manski, Charles F. 1990. ``Nonparametric Bounds on Treatment Effects.'' \textit{American Economic Review Papers and Proceedings} 80 (2): 319--323.
+
+\noindent Lemon, Katherine N., and Peter C. Verhoef. 2016. ``Understanding Customer Experience Throughout the Customer Journey.'' \textit{Journal of Marketing} 80 (6): 69--96.
+
+\noindent Tirunillai, Seshadri, and Gerard J. Tellis. 2014. ``Mining Marketing Meaning from Online Chatter.'' \textit{Journal of Marketing Research} 51 (4): 463--479.
+
+\end{document}

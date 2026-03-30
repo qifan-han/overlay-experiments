@@ -1,0 +1,563 @@
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath, amssymb, amsthm, mathtools, bm, geometry, setspace}
+\geometry{margin=1in}
+\onehalfspacing
+
+\newtheorem{assumption}{Assumption}
+\newtheorem{proposition}{Proposition}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{definition}{Definition}
+\newtheorem{remark}{Remark}
+
+\title{Measuring Causal Effects under Opaque Targeting: Point and Partial Identification in Overlay Experiments}
+\author{Qifan Han}
+\date{March 2026}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+
+Digital platforms often assign treatments such as ads, recommendations, or coupons using proprietary targeting rules that are unobservable to the econometrician. In many applications, the econometrician cannot intervene directly on the platform's latent assignment decision. Instead, the econometrician can run an \emph{overlay experiment}: she randomizes eligibility for the treatment, while the platform continues to determine whom it would like to treat.
+
+This environment creates a basic identification problem. The econometrician cares about the causal effect of the platform treatment itself, but only observes treatment receipt when both the platform and the overlay permit treatment. Even when realized receipt is observed, a passive overlay does not in general identify the population average treatment effect, because the platform may target users without pure randomization. For example, an e-commerce platform may selectively target users with larger gains from treatment.
+
+This paper develops two results for this environment. First, I show that when an excluded shifter is available, the overlay design admits a local-IV representation and point identification of the marginal treatment effect and, under full support, the average treatment effect. Second, when no such excluded shifter is available, I derive sharp bounds on the average treatment effect under a latent-index model with monotone selection on gains and nonnegative treatment effects.
+
+\section{Experimental Setup and Notation}
+
+Let $i$ index users. The platform makes a latent binary treatment decision
+\[
+D_i \in \{0,1\},
+\]
+where $D_i=1$ means that the platform intends to treat unit $i$. The econometrician randomizes a binary overlay
+\[
+Z_i \in \{0,1\},
+\]
+where $Z_i=1$ means that the unit is eligible to receive the platform treatment if the platform intends to treat it. Realized treatment receipt is therefore
+\[
+W_i = D_i Z_i.
+\]
+
+The causal object of interest is the effect of the platform treatment $D_i$. Let
+\[
+Y_i(0), \; Y_i(1)
+\]
+denote the potential outcomes under no platform treatment and under platform treatment, respectively, and let
+\[
+\tau_i := Y_i(1)-Y_i(0)
+\]
+denote the individual treatment effect of the platform treatment. Because the overlay is assumed to act only as a gate, the observed outcome is
+\[
+Y_i = Y_i(W_i).
+\]
+
+The econometrician observes
+\[
+(Y_i, W_i, Z_i, X_i),
+\]
+where $X_i$ is a vector of observed covariates. In Section 4, we additionally introduce an excluded shifter $S_i$.
+
+\begin{assumption}[Randomized Overlay]
+\label{ass:overlay}
+The overlay assignment $Z_i$ is conditionally independent of the platform's latent intent and potential outcomes:
+\[
+Z_i \perp (D_i, Y_i(0), Y_i(1)) \mid X_i.
+\]
+Moreover,
+\[
+0 < P(Z_i=1 \mid X_i=x) < 1
+\]
+for all $x$ in the support of $X_i$.
+\end{assumption}
+
+\begin{assumption}[One-Sided Receipt]
+\label{ass:onesided}
+Realized treatment receipt satisfies
+\[
+W_i = D_i Z_i.
+\]
+In particular, if $Z_i=0$, then $W_i=0$.
+\end{assumption}
+
+Assumption \ref{ass:overlay} states that the econometrician's overlay is randomized within covariate cells. Assumption \ref{ass:onesided} states that the overlay acts only as a gate: a unit receives treatment if and only if both the platform and the econometrician assign treatment.
+
+\section{What a Passive Overlay Identifies}
+
+For each value $x$ in the support of $X_i$, define the conditional intent-to-treat effect
+\[
+ITT(x) := E[Y_i \mid Z_i=1, X_i=x] - E[Y_i \mid Z_i=0, X_i=x].
+\]
+Also define the conditional treatment rate
+\[
+p(x) := P(W_i=1 \mid Z_i=1, X_i=x).
+\]
+By Assumption \ref{ass:onesided}, when $Z_i=1$ we have $W_i=D_i$, so
+\[
+p(x)=P(D_i=1 \mid X_i=x).
+\]
+
+The following proposition characterizes the object identified from a passive overlay without any further structure.
+
+\begin{proposition}[Identification of the effect for the platform-treated]
+\label{prop:att}
+Suppose Assumptions \ref{ass:overlay} and \ref{ass:onesided} hold. Then, for every $x$ such that $p(x)>0$,
+\begin{equation}
+ITT(x) = E[D_i \tau_i \mid X_i=x],
+\label{eq:itt_basic}
+\end{equation}
+and
+\begin{equation}
+\frac{ITT(x)}{p(x)} = E[\tau_i \mid D_i=1, X_i=x].
+\label{eq:att_basic}
+\end{equation}
+Hence the passive overlay point-identifies
+\[
+ATT(x) := E[\tau_i \mid D_i=1, X_i=x].
+\]
+\end{proposition}
+
+Proposition \ref{prop:att} shows that, in the passive overlay, the econometrician identifies the average causal effect of the platform treatment for the subpopulation that the platform actually selects. In general, this object need not equal the conditional average treatment effect
+\[
+ATE(x):=E[\tau_i \mid X_i=x].
+\]
+
+\section{Point Identification with an Excluded Shifter}
+
+This section considers point identification when an excluded shifter is available. Let $S_i$ denote an observed variable that affects the platform's assignment decision but does not directly affect potential outcomes once $X_i$ is held fixed.
+
+\begin{assumption}[Excluded Shifter and Latent Index]
+\label{ass:excluded}
+There exists a scalar latent variable $U_i$ and a measurable function $\pi(\cdot,\cdot)$ such that:
+\begin{enumerate}
+    \item The platform assignment rule is
+    \[
+    D_i = \mathbf{1}\{\pi(X_i,S_i) \ge U_i\}.
+    \]
+    \item Conditional on $X_i=x$,
+    \[
+    U_i \sim \mathrm{Unif}[0,1].
+    \]
+    \item
+    \[
+    (Y_i(0), Y_i(1), U_i) \perp S_i \mid X_i.
+    \]
+    \item For each $x$, the support of $\pi(x,S_i)$ conditional on $X_i=x$ contains an interval with nonempty interior.
+    \item The overlay remains randomized conditional on $(X_i,S_i)$:
+    \[
+    Z_i \perp (Y_i(0),Y_i(1),D_i,U_i)\mid (X_i,S_i).
+    \]
+\end{enumerate}
+\end{assumption}
+
+Define the propensity score
+\[
+P_i := \pi(X_i,S_i),
+\]
+and define the marginal treatment effect
+\[
+MTE(x,u) := E[\tau_i \mid X_i=x, U_i=u].
+\]
+
+For fixed $(x,p)$, define
+\[
+\mu_1(x,p) := E[Y_i \mid Z_i=1, X_i=x, P_i=p],
+\]
+and
+\[
+\mu_0(x) := E[Y_i \mid Z_i=0, X_i=x].
+\]
+
+The next proposition gives the key representation.
+
+\begin{proposition}[Outcome representation]
+\label{prop:representation}
+Suppose Assumptions \ref{ass:overlay}, \ref{ass:onesided}, and \ref{ass:excluded} hold. Then, for every $(x,p)$ in the support of $(X_i,P_i)$,
+\begin{equation}
+\mu_1(x,p) = \mu_0(x) + \int_0^p MTE(x,u)\,du.
+\label{eq:representation}
+\end{equation}
+\end{proposition}
+
+\begin{theorem}[Point identification of the MTE and the ATE]
+\label{thm:pointid}
+Suppose Assumptions \ref{ass:overlay}, \ref{ass:onesided}, and \ref{ass:excluded} hold, and suppose that for each $x$, the function $p \mapsto \mu_1(x,p)$ is differentiable on the interior of the support of $P_i \mid X_i=x$. Then:
+\begin{enumerate}
+    \item For every $x$ and every $p$ in the interior of the support of $P_i \mid X_i=x$,
+    \begin{equation}
+    MTE(x,p) = \frac{\partial}{\partial p} \mu_1(x,p).
+    \label{eq:mte_derivative}
+    \end{equation}
+    \item If the support of $P_i \mid X_i=x$ is all of $[0,1]$, then
+    \begin{equation}
+    ATE(x) := E[\tau_i \mid X_i=x] = \int_0^1 MTE(x,u)\,du.
+    \label{eq:ate_conditional}
+    \end{equation}
+    \item If the support condition in part 2 holds for all $x$, then
+    \begin{equation}
+    ATE := E[\tau_i] = E\!\left[\int_0^1 MTE(X_i,u)\,du\right].
+    \label{eq:ate_population}
+    \end{equation}
+\end{enumerate}
+\end{theorem}
+
+Section 4 shows that when an excluded shifter is available, the overlay environment admits a standard local-IV interpretation. The role of the overlay is operational: because $W_i=D_i$ whenever $Z_i=1$, the econometrician directly observes the platform propensity score in the treated arm.
+
+\section{Partial Identification without an Excluded Shifter}
+
+We now return to the passive setting in which no excluded shifter is available. In this case the econometrician still observes
+\[
+p(x)=P(W_i=1 \mid Z_i=1, X_i=x)=P(D_i=1 \mid X_i=x),
+\]
+but because $p(x)$ is a deterministic function of $X_i$, the variation in treatment propensity cannot be separated from the variation in covariates. A derivative-based local-IV argument is therefore unavailable.
+
+We instead impose a latent-index model and derive sharp bounds.
+
+\begin{assumption}[Passive Latent Index]
+\label{ass:passive}
+There exists a scalar latent variable $U_i$ such that
+\[
+D_i = \mathbf{1}\{p(X_i) \ge U_i\},
+\]
+where, conditional on $X_i=x$,
+\[
+U_i \sim \mathrm{Unif}[0,1].
+\]
+\end{assumption}
+
+Under Assumption \ref{ass:passive}, define the marginal treatment effect
+\[
+MTE(x,u) := E[\tau_i \mid X_i=x, U_i=u].
+\]
+
+The following lemma links the observable reduced form to the MTE schedule.
+
+\begin{lemma}[Overlay representation]
+\label{lem:overlay}
+Suppose Assumptions \ref{ass:overlay}, \ref{ass:onesided}, and \ref{ass:passive} hold. Then, for every $x$,
+\begin{equation}
+ITT(x) = \int_0^{p(x)} MTE(x,u)\,du.
+\label{eq:itt_representation}
+\end{equation}
+Moreover,
+\begin{equation}
+ATE(x) := E[\tau_i \mid X_i=x] = \int_0^1 MTE(x,u)\,du.
+\label{eq:ate_representation}
+\end{equation}
+\end{lemma}
+
+To obtain informative bounds, we impose shape restrictions on the MTE schedule.
+
+\begin{assumption}[Monotone Selection on Gains]
+\label{ass:monotone}
+For every $x$, the function $u \mapsto MTE(x,u)$ is weakly decreasing on $[0,1]$.
+\end{assumption}
+
+\begin{assumption}[Nonnegative Effects]
+\label{ass:nonnegative}
+For every $(x,u)$,
+\[
+MTE(x,u)\ge 0.
+\]
+\end{assumption}
+
+Assumption \ref{ass:monotone} says that the platform weakly prioritizes users with larger gains from treatment. Assumption \ref{ass:nonnegative} rules out harmful treatment effects and is used only to obtain the lower bound.
+
+\begin{theorem}[Sharp identification region]
+\label{thm:sharp}
+Fix $x$ such that $p(x)\in(0,1)$ and $ITT(x)\ge 0$. Suppose Assumptions \ref{ass:overlay}, \ref{ass:onesided}, \ref{ass:passive}, \ref{ass:monotone}, and \ref{ass:nonnegative} hold. Then
+\begin{equation}
+ITT(x) \le ATE(x) \le \frac{ITT(x)}{p(x)}.
+\label{eq:bounds_main}
+\end{equation}
+Equivalently, since $ATT(x)=ITT(x)/p(x)$,
+\begin{equation}
+ATE(x) \in \bigl[ITT(x),\, ATT(x)\bigr].
+\label{eq:bounds_att}
+\end{equation}
+The bounds are sharp.
+\end{theorem}
+
+\begin{remark}
+Under the assumptions of Theorem \ref{thm:sharp}, the platform-treated effect satisfies
+\[
+ATT(x)=\frac{ITT(x)}{p(x)} \ge ATE(x).
+\]
+Thus strong selective targeting shows up as a gap between $ATT(x)$ and the lower end of the identified set for $ATE(x)$.
+\end{remark}
+
+\section{Proofs}
+
+\subsection*{Proof of Proposition \ref{prop:att}}
+
+When $Z_i=1$, Assumption \ref{ass:onesided} implies $W_i=D_i$, so
+\[
+Y_i = Y_i(D_i) = Y_i(0) + D_i\bigl(Y_i(1)-Y_i(0)\bigr)
+= Y_i(0) + D_i \tau_i.
+\]
+Therefore, by Assumption \ref{ass:overlay},
+\[
+E[Y_i \mid Z_i=1, X_i=x]
+=
+E[Y_i(0) + D_i \tau_i \mid X_i=x]
+=
+E[Y_i(0)\mid X_i=x] + E[D_i\tau_i \mid X_i=x].
+\]
+When $Z_i=0$, Assumption \ref{ass:onesided} implies $W_i=0$, so
+\[
+Y_i = Y_i(0).
+\]
+Hence
+\[
+E[Y_i \mid Z_i=0, X_i=x] = E[Y_i(0)\mid X_i=x].
+\]
+Subtracting yields
+\[
+ITT(x)=E[D_i\tau_i\mid X_i=x],
+\]
+which proves \eqref{eq:itt_basic}.
+
+Next, because $D_i$ is binary,
+\[
+E[D_i\tau_i\mid X_i=x]
+=
+E[\tau_i \mid D_i=1, X_i=x]P(D_i=1\mid X_i=x).
+\]
+Since $p(x)=P(D_i=1\mid X_i=x)$, we obtain
+\[
+E[\tau_i \mid D_i=1, X_i=x]
+=
+\frac{E[D_i\tau_i\mid X_i=x]}{p(x)}
+=
+\frac{ITT(x)}{p(x)}.
+\]
+This proves \eqref{eq:att_basic}. \qed
+
+\subsection*{Proof of Proposition \ref{prop:representation}}
+
+Fix $(x,p)$ in the support of $(X_i,P_i)$. Under Assumptions \ref{ass:onesided} and \ref{ass:excluded}, when $Z_i=1$ and $P_i=p$,
+\[
+D_i = \mathbf{1}\{p \ge U_i\},
+\]
+and therefore
+\[
+Y_i = Y_i(D_i) = Y_i(0) + \mathbf{1}\{U_i\le p\}\tau_i.
+\]
+Taking conditional expectations,
+\[
+\mu_1(x,p)
+=
+E[Y_i(0)\mid Z_i=1, X_i=x, P_i=p]
++
+E[\mathbf{1}\{U_i\le p\}\tau_i \mid Z_i=1, X_i=x, P_i=p].
+\]
+By Assumption \ref{ass:excluded}(5), $Z_i$ is conditionally independent of $(Y_i(0),Y_i(1),U_i)$ given $(X_i,S_i)$. By Assumption \ref{ass:excluded}(3), $(Y_i(0),Y_i(1),U_i)$ is conditionally independent of $S_i$ given $X_i$. Since $P_i=\pi(X_i,S_i)$ is a measurable function of $(X_i,S_i)$, it follows that conditional on $X_i=x$,
+\[
+(Y_i(0),Y_i(1),U_i) \perp P_i.
+\]
+Hence
+\[
+E[Y_i(0)\mid Z_i=1, X_i=x, P_i=p] = E[Y_i(0)\mid X_i=x].
+\]
+Also,
+\[
+E[\mathbf{1}\{U_i\le p\}\tau_i \mid Z_i=1, X_i=x, P_i=p]
+=
+E[\mathbf{1}\{U_i\le p\}\tau_i \mid X_i=x].
+\]
+Therefore,
+\[
+\mu_1(x,p)
+=
+E[Y_i(0)\mid X_i=x]
++
+E[\mathbf{1}\{U_i\le p\}\tau_i \mid X_i=x].
+\]
+Now condition on $U_i$ and use Assumption \ref{ass:excluded}(2):
+\[
+E[\mathbf{1}\{U_i\le p\}\tau_i \mid X_i=x]
+=
+\int_0^p E[\tau_i \mid X_i=x, U_i=u]\,du
+=
+\int_0^p MTE(x,u)\,du.
+\]
+Finally, when $Z_i=0$, we have $W_i=0$ and hence
+\[
+\mu_0(x)=E[Y_i\mid Z_i=0,X_i=x]=E[Y_i(0)\mid X_i=x].
+\]
+Combining the last two displays yields
+\[
+\mu_1(x,p)=\mu_0(x)+\int_0^p MTE(x,u)\,du.
+\]
+This proves \eqref{eq:representation}. \qed
+
+\subsection*{Proof of Theorem \ref{thm:pointid}}
+
+By Proposition \ref{prop:representation},
+\[
+\mu_1(x,p)=\mu_0(x)+\int_0^p MTE(x,u)\,du.
+\]
+Since $\mu_0(x)$ does not depend on $p$, differentiating both sides with respect to $p$ gives
+\[
+\frac{\partial}{\partial p}\mu_1(x,p)=MTE(x,p),
+\]
+which proves \eqref{eq:mte_derivative}.
+
+If the support of $P_i\mid X_i=x$ is all of $[0,1]$, then by Assumption \ref{ass:excluded}(2),
+\[
+ATE(x)=E[\tau_i\mid X_i=x]
+=
+\int_0^1 E[\tau_i\mid X_i=x, U_i=u]\,du
+=
+\int_0^1 MTE(x,u)\,du.
+\]
+This proves \eqref{eq:ate_conditional}.
+
+Finally,
+\[
+ATE = E[\tau_i] = E\!\left[E[\tau_i\mid X_i]\right]
+= E\!\left[\int_0^1 MTE(X_i,u)\,du\right],
+\]
+which proves \eqref{eq:ate_population}. \qed
+
+\subsection*{Proof of Lemma \ref{lem:overlay}}
+
+By Proposition \ref{prop:att},
+\[
+ITT(x)=E[D_i\tau_i\mid X_i=x].
+\]
+Under Assumption \ref{ass:passive},
+\[
+D_i=\mathbf{1}\{p(x)\ge U_i\},
+\]
+so
+\[
+ITT(x)
+=
+E[\mathbf{1}\{U_i\le p(x)\}\tau_i \mid X_i=x].
+\]
+Conditioning on $U_i$ and using $U_i\sim\mathrm{Unif}[0,1]$ conditional on $X_i=x$,
+\[
+ITT(x)
+=
+\int_0^{p(x)} E[\tau_i\mid X_i=x,U_i=u]\,du
+=
+\int_0^{p(x)} MTE(x,u)\,du.
+\]
+This proves \eqref{eq:itt_representation}.
+
+Similarly,
+\[
+ATE(x)=E[\tau_i\mid X_i=x]
+=
+\int_0^1 E[\tau_i\mid X_i=x,U_i=u]\,du
+=
+\int_0^1 MTE(x,u)\,du,
+\]
+which proves \eqref{eq:ate_representation}. \qed
+
+\subsection*{Proof of Theorem \ref{thm:sharp}}
+
+By Lemma \ref{lem:overlay},
+\[
+ITT(x)=\int_0^{p(x)} MTE(x,u)\,du
+\quad\text{and}\quad
+ATE(x)=\int_0^1 MTE(x,u)\,du.
+\]
+
+\paragraph{Upper bound.}
+Because $u\mapsto MTE(x,u)$ is weakly decreasing on $[0,1]$, the average value of $MTE(x,u)$ over the treated interval $[0,p(x)]$ is at least as large as the average value over the untreated interval $[p(x),1]$. Formally,
+\[
+\frac{1}{1-p(x)}\int_{p(x)}^1 MTE(x,u)\,du
+\le
+\frac{1}{p(x)}\int_0^{p(x)} MTE(x,u)\,du.
+\]
+Thus
+\[
+ATU(x):=\frac{1}{1-p(x)}\int_{p(x)}^1 MTE(x,u)\,du
+\le
+\frac{ITT(x)}{p(x)}=ATT(x).
+\]
+Using the decomposition
+\[
+ATE(x)=p(x)ATT(x)+(1-p(x))ATU(x),
+\]
+we obtain
+\[
+ATE(x)\le ATT(x)=\frac{ITT(x)}{p(x)}.
+\]
+
+\paragraph{Lower bound.}
+By Assumption \ref{ass:nonnegative},
+\[
+\int_{p(x)}^1 MTE(x,u)\,du \ge 0.
+\]
+Therefore,
+\[
+ATE(x)
+=
+\int_0^{p(x)} MTE(x,u)\,du
++
+\int_{p(x)}^1 MTE(x,u)\,du
+\ge
+\int_0^{p(x)} MTE(x,u)\,du
+=
+ITT(x).
+\]
+
+\paragraph{Sharpness.}
+Fix $x$, and write
+\[
+p:=p(x), \qquad I:=ITT(x).
+\]
+Consider the following two candidate MTE schedules:
+\[
+m^{L}(u)=
+\begin{cases}
+I/p, & 0\le u\le p,\\
+0, & p<u\le 1,
+\end{cases}
+\]
+and
+\[
+m^{U}(u)=I/p, \qquad 0\le u\le 1.
+\]
+Both schedules are weakly decreasing and nonnegative. Moreover,
+\[
+\int_0^p m^{L}(u)\,du = \int_0^p m^{U}(u)\,du = I.
+\]
+Hence both schedules generate the same observables $(p(x),ITT(x))$.
+
+Under $m^{L}$,
+\[
+ATE(x)=\int_0^1 m^{L}(u)\,du = I = ITT(x).
+\]
+Under $m^{U}$,
+\[
+ATE(x)=\int_0^1 m^{U}(u)\,du = \frac{I}{p} = ATT(x).
+\]
+Thus both endpoints are attainable.
+
+Finally, for any $\lambda\in[0,1]$, define
+\[
+m^{\lambda}(u)=\lambda m^{U}(u)+(1-\lambda)m^{L}(u).
+\]
+Then $m^{\lambda}(u)$ is again weakly decreasing and nonnegative, satisfies
+\[
+\int_0^p m^{\lambda}(u)\,du = I,
+\]
+and yields
+\[
+\int_0^1 m^{\lambda}(u)\,du
+=
+\lambda \frac{I}{p} + (1-\lambda)I.
+\]
+Hence every value in the interval
+\[
+[ITT(x),ATT(x)]
+\]
+is attainable under the maintained assumptions. The bounds are therefore sharp. \qed
+
+\end{document}
