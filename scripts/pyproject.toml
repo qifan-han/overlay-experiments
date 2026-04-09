@@ -1,0 +1,20 @@
+[project]
+name = "overlay-experiments-mc"
+version = "0.1.0"
+description = "Monte Carlo simulations for overlay experiment identification results"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.12",
+    "matplotlib>=3.8",
+    "pandas>=2.2",
+    "statsmodels>=0.14",
+    "tqdm>=4.66",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.backends.legacy:build"
+
+[tool.setuptools]
+py-modules = ["simulation"]

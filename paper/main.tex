@@ -1,6 +1,7 @@
 \documentclass[11pt]{article}
 \usepackage[utf8]{inputenc}
 \usepackage{amsmath, amssymb, amsthm, mathtools, bm, geometry, setspace}
+\usepackage{booktabs}
 \geometry{margin=1in}
 \onehalfspacing
 
@@ -10,23 +11,217 @@
 \newtheorem{lemma}{Lemma}
 \newtheorem{definition}{Definition}
 \newtheorem{remark}{Remark}
+\newtheorem{corollary}{Corollary}
 
-\title{Measuring Causal Effects under Opaque Targeting: Point and Partial Identification in Overlay Experiments}
+\title{Measuring Causal Effects under Opaque Targeting:\\
+Point and Partial Identification in Overlay Experiments}
 \author{Qifan Han}
 \date{March 2026}
 
 \begin{document}
 \maketitle
 
+\begin{abstract}
+Large digital platforms run hundreds of simultaneous A/B tests, deploying proprietary
+algorithms to decide which users receive each treatment. From the perspective of a
+single advertiser or external researcher, the platform's targeting rule is opaque: the
+platform's latent assignment decision is unobserved, and realized treatment receipt
+depends on both the experimenter's own randomization and the platform's black-box
+logic. Standard experimental designs that randomize eligibility recover only the Average
+Treatment Effect on the Treated (ATT) for the platform's latently selected subpopulation,
+not the Average Treatment Effect (ATE) that governs population-level investment and
+scale-up decisions. This paper develops identification theory for this \emph{overlay
+experiment} setting, in which the econometrician randomizes eligibility while the
+platform continues to exercise its opaque targeting rule.
+
+We establish two main results. First, when an excluded shifter---a variable that affects
+the platform's targeting propensity but not potential outcomes---is available, the
+overlay admits a local-IV representation, point-identifying the Marginal Treatment
+Effect (MTE) and, under full support, the ATE. Second, when no excluded shifter is
+available, we derive sharp bounds on the ATE under a latent-index model with monotone
+selection on gains and nonnegative treatment effects: $ATE(x) \in [ITT(x),\, ATT(x)]$.
+We introduce the \emph{Selection Ratio} $R(x) = ATT(x)/ATE(x) \geq 1$ as a summary
+measure of algorithmic cherry-picking. Our framework is directly applicable to
+settings where multiple firms simultaneously overlay experiments on the same platform
+and no single firm can observe the others' targeting rules.
+\end{abstract}
+
 \section{Introduction}
 
-Digital platforms often assign treatments such as ads, recommendations, or coupons using proprietary targeting rules that are unobservable to the econometrician. In many applications, the econometrician cannot intervene directly on the platform's latent assignment decision. Instead, the econometrician can run an \emph{overlay experiment}: she randomizes eligibility for the treatment, while the platform continues to determine whom it would like to treat.
+Large-scale digital platforms---Google, Meta, Amazon, TikTok---run hundreds or thousands
+of simultaneous A/B tests every day to iterate their products, algorithms, and
+marketing strategies. A single platform may support experiments from dozens of internal
+teams and thousands of external advertisers concurrently. As documented by Tang et al.\
+(2010) and Kohavi et al.\ (2020), the standard engineering solution to this challenge
+is an \emph{orthogonal traffic assignment} system: each experiment is randomized
+independently, so that any user may be simultaneously enrolled in multiple experiments
+from different teams or advertisers.
 
-This environment creates a basic identification problem. The econometrician cares about the causal effect of the platform treatment itself, but only observes treatment receipt when both the platform and the overlay permit treatment. Even when realized receipt is observed, a passive overlay does not in general identify the population average treatment effect, because the platform may target users without pure randomization. For example, an e-commerce platform may selectively target users with larger gains from treatment.
+This orthogonal design creates a fundamental asymmetry between the platform and any
+individual experimenter. The platform sees the joint assignment vector across all
+experiments and can---in principle---identify interactions between treatments (Ye et al.\
+2025). But an individual advertiser or external researcher sees only their own
+randomization. From their perspective, the platform's allocation of their specific
+treatment to eligible users is shaped by a proprietary optimization algorithm that
+aggregates bids, targeting rules, and signals from all other concurrent campaigns. This
+algorithm is \emph{opaque}: the experimenter cannot observe whom the platform would
+have chosen to treat absent their eligibility restriction, let alone recover the full
+joint assignment distribution.
 
-This paper develops two results for this environment. First, I show that when an excluded shifter is available, the overlay design admits a local-IV representation and point identification of the marginal treatment effect and, under full support, the average treatment effect. Second, when no such excluded shifter is available, I derive sharp bounds on the average treatment effect under a latent-index model with monotone selection on gains and nonnegative treatment effects.
+This paper formalizes the identification problem that arises in this environment.
+An experimenter randomizes an eligibility variable $Z_i \in \{0,1\}$---for instance,
+a random subset of users is made eligible to receive a sponsored post, a recommendation
+override, or a coupon. The platform then decides, within the eligible set, whom to
+actually treat, using its own latent targeting rule. Let $D_i \in \{0,1\}$ denote the
+platform's latent intent to treat user $i$. Realized treatment receipt is
+\[
+  W_i = D_i Z_i,
+\]
+reflecting the fact that treatment occurs only when both the platform intends to treat
+($D_i = 1$) and the experimenter has made the user eligible ($Z_i = 1$). When $Z_i = 0$,
+the platform's intent is irrelevant---the user is blocked regardless.
+
+This structure, which we call an \emph{overlay experiment}, arises naturally in several
+practically important settings:
+\begin{itemize}
+  \item \textbf{Multi-experiment platforms (within-firm):} A firm's marketing team
+    randomly activates a coupon overlay on top of the recommendation team's active
+    personalization algorithm. Neither team sees the other's full targeting rule. Each
+    team's realized treatment is $W_i = D_i^{\text{other}} \cdot Z_i^{\text{own}}$.
+  \item \textbf{Multi-firm advertising:} Multiple advertisers simultaneously bid for the
+    same users on a platform. Advertiser A randomizes campaign eligibility, but the
+    platform's actual delivery depends on Advertiser A's bids, Advertiser B's
+    concurrent campaign, and the platform's auction mechanism---all unobservable to A.
+  \item \textbf{Third-party auditing:} An external researcher or regulator cannot force
+    a platform to run a clean experiment. They can only randomize incentives or
+    eligibility for a sample of users and observe outcomes, while the platform's
+    targeting algorithm continues to operate.
+\end{itemize}
+
+In all three cases, the experimenter faces a one-sided noncompliance problem: when
+$Z_i = 1$, treatment receipt is $W_i = D_i$, which the experimenter can observe; but
+the platform's selection rule governing $D_i$ is unknown. As a consequence, as we
+formalize in Proposition~\ref{prop:att} below, the passive overlay identifies only the
+\emph{average treatment effect on the platform-treated} (ATT)---the causal effect for
+the users the platform would have selected. In general, $ATT(x) \neq ATE(x)$, because
+the platform endogenously selects users with larger gains from treatment.
+
+A recent and important paper by Ye et al.\ (2025) addresses a related but distinct
+problem: when the \emph{platform itself} runs $m$ simultaneous A/B tests with an
+\emph{orthogonal, known} assignment mechanism, how can it estimate ATEs for all $2^m$
+treatment combinations from only $O(m)$ observed combinations? Their Debiased Deep
+Learning (DeDL) framework solves this interpolation problem using DML and structured
+neural networks. Crucially, their approach requires that the treatment assignment
+mechanism $v(\mathbf{t} \mid x) = \mathbb{P}[\mathbf{T} = \mathbf{t} \mid X = x]$ is
+\emph{known}---it is the platform's own randomization rule. Our paper addresses the
+complementary case where an external experimenter faces an \emph{unknown} propensity
+score $p(x) = \mathbb{P}(D_i = 1 \mid X_i = x)$. The identification strategy must
+therefore be entirely different: rather than interpolating across known treatment
+combinations, we exploit (i)~an excluded shifter to obtain a local-IV representation,
+or (ii)~shape restrictions on the MTE schedule to construct informative bounds.
+
+\textbf{Main contributions.} This paper makes three contributions.
+
+\textbf{1. ATT identification from a passive overlay (Proposition~\ref{prop:att}).}
+We show that the ratio of the intent-to-treat effect to the treatment rate,
+$ITT(x)/p(x)$, identifies the ATT. This is the \emph{maximal} object identified
+from a passive overlay without additional structure, regardless of how the
+platform targets users.
+
+\textbf{2. Point identification of the MTE and ATE with an excluded shifter
+(Theorem~\ref{thm:pointid}).}
+When a variable $S_i$ shifts the platform's propensity score without directly
+affecting potential outcomes, the overlay admits a local-IV representation:
+$MTE(x, p) = \partial_p \, E[Y_i \mid Z_i = 1, X_i = x, P_i = p]$,
+where $P_i = \pi(X_i, S_i)$ is the platform propensity score. Under full support
+of $P_i$, the ATE is identified. This section bridges our setting to the
+Heckman--Vytlacil (2005) MTE framework.
+
+\textbf{3. Sharp partial identification bounds on the ATE
+(Theorem~\ref{thm:sharp}).}
+Without an excluded shifter, we derive sharp bounds under a latent-index model
+with (i)~monotone selection on gains and (ii)~nonnegative treatment effects:
+\[
+  ATE(x) \in [ITT(x),\, ATT(x)].
+\]
+The bounds are sharp: both endpoints are attained by admissible data-generating
+processes. We introduce the \emph{Selection Ratio} $R(x) = ATT(x)/ATE(x)$
+as a practical summary of the platform's algorithmic cherry-picking efficiency.
+
+\textbf{Paper organization.} Section~\ref{sec:setup} introduces the experimental setup
+and notation. Section~\ref{sec:passive} characterizes what a passive overlay identifies.
+Section~\ref{sec:pointid} develops point identification with an excluded shifter.
+Section~\ref{sec:partial} derives sharp bounds without an excluded shifter and
+introduces the Selection Ratio. Section~\ref{sec:lit} reviews related literature.
+Section~\ref{sec:proofs} contains all proofs.
+
+\section{Related Literature}
+\label{sec:lit}
+
+\textbf{Marginal treatment effects.}
+Our point identification result in Section~\ref{sec:pointid} is an application of the
+MTE framework developed by Heckman and Vytlacil (2005, 2007). In that framework, a
+continuously distributed instrument $Z$ shifts the propensity score $P(Z) =
+\mathbb{P}(D = 1 \mid Z)$, and the MTE is identified as $\partial_p E[Y \mid P = p]$.
+Our contribution is to show that the overlay design---in which $W_i = D_i Z_i$ and the
+treated arm directly reveals $D_i$---provides a natural and operationally distinct
+implementation of the local-IV approach: the excluded shifter $S_i$ enters through the
+platform's latent propensity $\pi(X_i, S_i)$, and the econometrician observes $P_i$
+directly in the arm $Z_i = 1$. Vytlacil (2002) establishes that the latent-index
+structure underlying our Assumption~\ref{ass:excluded} is equivalent to the LATE
+conditions of Angrist and Imbens (1994), confirming that no additional restrictions
+beyond standard IV are invoked.
+
+\textbf{Partial identification.}
+Our bounds in Section~\ref{sec:partial} complement the partial identification
+literature initiated by Manski (1990). Manski's classic bounds on ATE rely only on
+the support of outcomes and can be wide when outcomes are unbounded. Our framework
+starts from a stronger baseline---the overlay design identifies $ITT(x)$ and $ATT(x)$,
+so the question is only how far $ATE(x)$ can deviate from $ATT(x)$---and derives
+sharper bounds by exploiting two economically motivated shape restrictions: monotone
+selection on gains (the platform prioritizes high-responders) and nonnegative effects.
+The idea of using shape restrictions to tighten partial identification bounds follows
+Manski and Pepper (2000).
+
+\textbf{Overlapping and simultaneous platform experiments.}
+Tang et al.\ (2010) and Kohavi et al.\ (2020) describe the engineering infrastructure
+for overlapping experiments at Google and other large platforms. Their orthogonal
+traffic assignment system ensures independent randomization across experiments, which
+is the design our paper's Assumption~\ref{ass:overlay} requires for the overlay $Z_i$.
+Xiong et al.\ (2020) document the same infrastructure at Tencent. These papers address
+the \emph{design} of simultaneous experiments; ours addresses the \emph{identification}
+problem that arises when an experimenter cannot enforce orthogonal design and faces an
+opaque targeting environment.
+
+\textbf{Combinatorial experiments.}
+Ye et al.\ (2025) study the problem of estimating ATEs for all $2^m$ combinations of
+$m$ simultaneous A/B tests when only $O(m)$ combinations are observed. Their DeDL
+framework uses DML with structured deep neural networks and requires that the treatment
+assignment mechanism is known---a natural assumption when the platform controls all
+$m$ experiments. Our paper is complementary: we address the case where the assignment
+mechanism is unknown, which arises precisely when an external experimenter faces an
+opaque platform. The two papers thus address the platform-experiment problem from
+opposite sides: Ye et al.\ from inside (platform-controlled, known assignment), ours
+from outside (experimenter-controlled, unknown platform propensity).
+
+\textbf{Two-sided platform experiments and interference.}
+Johari et al.\ (2022) study bias in A/B tests on two-sided platforms (e.g., ride-sharing,
+labor markets) due to market-level interference: treating some users shifts outcomes
+for untreated users via market equilibrium effects. Their bias stems from a SUTVA
+violation, while ours stems from endogenous selection by an opaque targeting algorithm.
+These are distinct but complementary sources of identification failure in platform
+settings.
+
+\textbf{Advertising effectiveness.}
+Gordon et al.\ (2023) show empirically that non-experimental approaches to advertising
+measurement---including DML with observational data---can have errors exceeding 100\%
+relative to randomized experiment benchmarks. This motivates the overlay design as
+a preferred approach when a clean experiment is infeasible. Our paper provides the
+identification theory for the overlay design, explaining precisely what it identifies
+(ATT) and under what additional conditions it can recover ATE.
 
 \section{Experimental Setup and Notation}
+\label{sec:setup}
 
 Let $i$ index users. The platform makes a latent binary treatment decision
 \[
@@ -58,7 +253,7 @@ The econometrician observes
 \[
 (Y_i, W_i, Z_i, X_i),
 \]
-where $X_i$ is a vector of observed covariates. In Section 4, we additionally introduce an excluded shifter $S_i$.
+where $X_i$ is a vector of observed covariates. In Section~\ref{sec:pointid}, we additionally introduce an excluded shifter $S_i$.
 
 \begin{assumption}[Randomized Overlay]
 \label{ass:overlay}
@@ -85,6 +280,7 @@ In particular, if $Z_i=0$, then $W_i=0$.
 Assumption \ref{ass:overlay} states that the econometrician's overlay is randomized within covariate cells. Assumption \ref{ass:onesided} states that the overlay acts only as a gate: a unit receives treatment if and only if both the platform and the econometrician assign treatment.
 
 \section{What a Passive Overlay Identifies}
+\label{sec:passive}
 
 For each value $x$ in the support of $X_i$, define the conditional intent-to-treat effect
 \[
@@ -125,6 +321,7 @@ ATE(x):=E[\tau_i \mid X_i=x].
 \]
 
 \section{Point Identification with an Excluded Shifter}
+\label{sec:pointid}
 
 This section considers point identification when an excluded shifter is available. Let $S_i$ denote an observed variable that affects the platform's assignment decision but does not directly affect potential outcomes once $X_i$ is held fixed.
 
@@ -203,9 +400,10 @@ Suppose Assumptions \ref{ass:overlay}, \ref{ass:onesided}, and \ref{ass:excluded
 \end{enumerate}
 \end{theorem}
 
-Section 4 shows that when an excluded shifter is available, the overlay environment admits a standard local-IV interpretation. The role of the overlay is operational: because $W_i=D_i$ whenever $Z_i=1$, the econometrician directly observes the platform propensity score in the treated arm.
+Section~\ref{sec:pointid} shows that when an excluded shifter is available, the overlay environment admits a standard local-IV interpretation. The role of the overlay is operational: because $W_i=D_i$ whenever $Z_i=1$, the econometrician directly observes the platform propensity score in the treated arm.
 
 \section{Partial Identification without an Excluded Shifter}
+\label{sec:partial}
 
 We now return to the passive setting in which no excluded shifter is available. In this case the econometrician still observes
 \[
@@ -263,7 +461,7 @@ MTE(x,u)\ge 0.
 \]
 \end{assumption}
 
-Assumption \ref{ass:monotone} says that the platform weakly prioritizes users with larger gains from treatment. Assumption \ref{ass:nonnegative} rules out harmful treatment effects and is used only to obtain the lower bound.
+Assumption \ref{ass:monotone} says that the platform weakly prioritizes users with larger gains from treatment. This is the econometric translation of the platform's incentive to maximize campaign effectiveness: advertisers and platforms optimize for users with the highest marginal response. Assumption \ref{ass:nonnegative} rules out harmful treatment effects and is used only to obtain the lower bound.
 
 \begin{theorem}[Sharp identification region]
 \label{thm:sharp}
@@ -288,7 +486,41 @@ ATT(x)=\frac{ITT(x)}{p(x)} \ge ATE(x).
 Thus strong selective targeting shows up as a gap between $ATT(x)$ and the lower end of the identified set for $ATE(x)$.
 \end{remark}
 
+\subsection{The Selection Ratio}
+
+Theorem~\ref{thm:sharp} suggests a natural summary statistic for the degree of algorithmic
+cherry-picking. We define the \emph{Selection Ratio} as:
+\begin{equation}
+R(x) := \frac{ATT(x)}{ATE(x)}.
+\label{eq:selection_ratio}
+\end{equation}
+
+The Selection Ratio measures how much the platform's targeted subpopulation outperforms
+the population average. If the platform assigns treatments uniformly at random,
+$R(x)=1$. If the algorithm perfectly targets the top-$p(x)$ fraction of users by
+treatment effect, $R(x)$ can be substantially above 1, indicating strong
+cherry-picking.
+
+\begin{corollary}[Bounds on the Selection Ratio]
+\label{cor:ratio}
+Under the conditions of Theorem~\ref{thm:sharp}, the Selection Ratio is partially identified:
+\begin{equation}
+R(x) = \frac{ATT(x)}{ATE(x)} \in \left[1,\; \frac{ATT(x)}{ITT(x)}\right] = \left[1,\; \frac{1}{p(x)}\right].
+\label{eq:ratio_bounds}
+\end{equation}
+\end{corollary}
+
+The lower bound $R(x) \ge 1$ follows because $ATE(x) \le ATT(x)$ under monotone
+selection. The upper bound $R(x) \le 1/p(x)$ follows because $ATE(x) \ge ITT(x)
+= p(x) \cdot ATT(x)$. A lower treatment rate $p(x)$ implies a higher potential
+for cherry-picking, as the platform must be highly selective among eligible users.
+In practice, advertisers can compare $ATT(x)$ (identifiable from the overlay) with
+$ATE(x)$ estimates (from a multi-cell design, if available) to assess how much of
+their observed campaign ROI reflects the platform's targeting efficiency rather than
+the treatment's intrinsic population value.
+
 \section{Proofs}
+\label{sec:proofs}
 
 \subsection*{Proof of Proposition \ref{prop:att}}
 
@@ -559,5 +791,14 @@ Hence every value in the interval
 [ITT(x),ATT(x)]
 \]
 is attainable under the maintained assumptions. The bounds are therefore sharp. \qed
+
+\subsection*{Proof of Corollary \ref{cor:ratio}}
+
+By Theorem~\ref{thm:sharp}, $ATE(x) \in [ITT(x), ATT(x)]$.
+
+For the lower bound on $R(x)$: $ATE(x) \le ATT(x)$ implies $R(x) = ATT(x)/ATE(x) \ge 1$.
+
+For the upper bound on $R(x)$: $ATE(x) \ge ITT(x) = p(x) \cdot ATT(x)$ implies
+$R(x) = ATT(x)/ATE(x) \le ATT(x)/(p(x) \cdot ATT(x)) = 1/p(x)$. \qed
 
 \end{document}
