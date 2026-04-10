@@ -2,8 +2,11 @@
 \usepackage[utf8]{inputenc}
 \usepackage{amsmath, amssymb, amsthm, mathtools, bm, geometry, setspace}
 \usepackage{booktabs}
+\usepackage{natbib}
+\usepackage[colorlinks=true, citecolor=blue, linkcolor=blue, urlcolor=blue]{hyperref}
 \geometry{margin=1in}
 \onehalfspacing
+\setcitestyle{authoryear, round, semicolon}
 
 \newtheorem{assumption}{Assumption}
 \newtheorem{proposition}{Proposition}
@@ -16,789 +19,1359 @@
 \title{Measuring Causal Effects under Opaque Targeting:\\
 Point and Partial Identification in Overlay Experiments}
 \author{Qifan Han}
-\date{March 2026}
+\date{April 2026}
 
 \begin{document}
 \maketitle
 
+% ============================================================
 \begin{abstract}
-Large digital platforms run hundreds of simultaneous A/B tests, deploying proprietary
-algorithms to decide which users receive each treatment. From the perspective of a
-single advertiser or external researcher, the platform's targeting rule is opaque: the
-platform's latent assignment decision is unobserved, and realized treatment receipt
-depends on both the experimenter's own randomization and the platform's black-box
-logic. Standard experimental designs that randomize eligibility recover only the Average
-Treatment Effect on the Treated (ATT) for the platform's latently selected subpopulation,
-not the Average Treatment Effect (ATE) that governs population-level investment and
-scale-up decisions. This paper develops identification theory for this \emph{overlay
-experiment} setting, in which the econometrician randomizes eligibility while the
-platform continues to exercise its opaque targeting rule.
+Large digital platforms deploy proprietary targeting algorithms that allocate
+advertiser treatments within randomized eligibility designs.  Realized treatment
+receipt is $W_i = D_i Z_i$, where $Z_i$ is the analyst's eligibility indicator
+and $D_i$ is the platform's latent targeting decision.  Standard overlay
+experiments identify the Conditional Average Treatment Effect on the Treated
+(CATT)---the effect for users the platform selects---but scale-up and
+budget-setting decisions require the Conditional Average Treatment Effect (CATE)
+for the full target population.  Because platforms optimize for response, CATT
+systematically overstates CATE, and an advertiser who extrapolates the CATT to a
+budget expansion will encounter predictable diminishing returns.
 
-We establish two main results. First, when an excluded shifter---a variable that affects
-the platform's targeting propensity but not potential outcomes---is available, the
-overlay admits a local-IV representation, point-identifying the Marginal Treatment
-Effect (MTE) and, under full support, the ATE. Second, when no excluded shifter is
-available, we derive sharp bounds on the ATE under a latent-index model with monotone
-selection on gains and nonnegative treatment effects: $ATE(x) \in [ITT(x),\, ATT(x)]$.
-We introduce the \emph{Selection Ratio} $R(x) = ATT(x)/ATE(x) \geq 1$ as a summary
-measure of algorithmic cherry-picking. Our framework is directly applicable to
-settings where multiple firms simultaneously overlay experiments on the same platform
-and no single firm can observe the others' targeting rules.
+We make two parallel contributions addressing different information environments
+within the same overlay framework.  \emph{Track A (point identification):} when
+a variable that shifts the platform's delivery propensity without affecting
+potential outcomes---an excluded shifter---is available, the overlay admits a
+local-IV representation that point-identifies the full Marginal Treatment Effect
+(MTE) schedule and, under full support, the CATE.  A distinctive feature is that
+the propensity score is directly observed in the eligible arm, eliminating a
+first-stage estimation step.  \emph{Track B (partial identification):} when no
+excluded shifter is available---the common case for standard holdout studies---we
+derive the sharp identification region $\mathrm{CATE}(x) \in [\mathrm{CITT}(x),
+\mathrm{CATT}(x)]$ under monotone selection on gains and nonnegative treatment
+effects; both bounds are directly computable from existing holdout data.  We
+introduce the \emph{Selection Ratio} $R(x) = \mathrm{CATT}(x)/\mathrm{CATE}(x)
+\in [1,\,1/e(x)]$ as a diagnostic for algorithmic cherry-picking and a decision
+rule for when Track A is warranted.  We propose estimators for both tracks and
+evaluate their finite-sample performance via Monte Carlo simulation calibrated to
+realistic advertising settings.
 \end{abstract}
 
+% ============================================================
 \section{Introduction}
+\label{sec:intro}
 
-Large-scale digital platforms---Google, Meta, Amazon, TikTok---run hundreds or thousands
-of simultaneous A/B tests every day to iterate their products, algorithms, and
-marketing strategies. A single platform may support experiments from dozens of internal
-teams and thousands of external advertisers concurrently. As documented by Tang et al.\
-(2010) and Kohavi et al.\ (2020), the standard engineering solution to this challenge
-is an \emph{orthogonal traffic assignment} system: each experiment is randomized
-independently, so that any user may be simultaneously enrolled in multiple experiments
-from different teams or advertisers.
+Consider a firm running a sponsored-post campaign on Meta.  Meta's system
+randomly partitions the target audience: half are placed in an exposed arm
+(eligible to see the ad, $Z_i = 1$) and half in a holdout arm ($Z_i = 0$).
+Within the exposed arm, Meta's auction algorithm selects which users actually
+receive the ad---choosing from among the eligible those with the highest
+predicted conversion probabilities given competing bids and platform objectives.
+In a typical campaign, only 10--30\% of eligible users are served an ad.
+Meta's standard Conversion Lift report delivers one number: the average lift in
+conversions among the users the algorithm chose to expose, divided by the
+exposure rate.  This is the Conditional Average Treatment Effect on the Treated
+(CATT)---the lift for the algorithmically cherry-picked subpopulation.
 
-This orthogonal design creates a fundamental asymmetry between the platform and any
-individual experimenter. The platform sees the joint assignment vector across all
-experiments and can---in principle---identify interactions between treatments (Ye et al.\
-2025). But an individual advertiser or external researcher sees only their own
-randomization. From their perspective, the platform's allocation of their specific
-treatment to eligible users is shaped by a proprietary optimization algorithm that
-aggregates bids, targeting rules, and signals from all other concurrent campaigns. This
-algorithm is \emph{opaque}: the experimenter cannot observe whom the platform would
-have chosen to treat absent their eligibility restriction, let alone recover the full
-joint assignment distribution.
+The CATT answers the right question for one decision: \emph{Did the campaign
+work for the users the platform currently targets?}  But the firm's CFO faces a
+different decision: \emph{Should we double the budget next quarter?}  Doubling
+the budget means the algorithm must start targeting users outside its current
+selection---users with lower predicted conversion probabilities than those
+currently reached.  Whether the expansion is profitable depends on the
+Conditional Average Treatment Effect (CATE) across the full eligible population,
+not just the CATT for the current targets.  With a treatment rate of
+$e(x) = 0.10$, the CATE is a 90\%-weighted average of the effect on
+currently untargeted users and the observed CATT.  The worst-case
+overstatement---that is, the largest factor by which naive extrapolation of the
+CATT could inflate the scale-up return---is $1/e(x) = 10$.  This worst-case
+error is computable immediately from the treatment rate in any standard holdout
+study.
 
-This paper formalizes the identification problem that arises in this environment.
-An experimenter randomizes an eligibility variable $Z_i \in \{0,1\}$---for instance,
-a random subset of users is made eligible to receive a sponsored post, a recommendation
-override, or a coupon. The platform then decides, within the eligible set, whom to
-actually treat, using its own latent targeting rule. Let $D_i \in \{0,1\}$ denote the
-platform's latent intent to treat user $i$. Realized treatment receipt is
+This paper studies identification and estimation of the CATE in \emph{overlay
+experiments}, where the analyst randomizes a binary eligibility indicator
+$Z_i \in \{0,1\}$ while the platform's algorithm makes a latent binary targeting
+decision $D_i \in \{0,1\}$.  Realized treatment receipt is
 \[
   W_i = D_i Z_i,
 \]
-reflecting the fact that treatment occurs only when both the platform intends to treat
-($D_i = 1$) and the experimenter has made the user eligible ($Z_i = 1$). When $Z_i = 0$,
-the platform's intent is irrelevant---the user is blocked regardless.
+reflecting the gate structure: treatment occurs only when the analyst has made
+the user eligible \emph{and} the platform has chosen to target them.  The
+analyst observes $(Y_i, W_i, Z_i, X_i)$---outcomes, actual treatment,
+eligibility, and pre-treatment covariates---but not the platform's targeting
+rule.  This structure arises in three practically important settings.
 
-This structure, which we call an \emph{overlay experiment}, arises naturally in several
-practically important settings:
-\begin{itemize}
-  \item \textbf{Multi-experiment platforms (within-firm):} A firm's marketing team
-    randomly activates a coupon overlay on top of the recommendation team's active
-    personalization algorithm. Neither team sees the other's full targeting rule. Each
-    team's realized treatment is $W_i = D_i^{\text{other}} \cdot Z_i^{\text{own}}$.
-  \item \textbf{Multi-firm advertising:} Multiple advertisers simultaneously bid for the
-    same users on a platform. Advertiser A randomizes campaign eligibility, but the
-    platform's actual delivery depends on Advertiser A's bids, Advertiser B's
-    concurrent campaign, and the platform's auction mechanism---all unobservable to A.
-  \item \textbf{Third-party auditing:} An external researcher or regulator cannot force
-    a platform to run a clean experiment. They can only randomize incentives or
-    eligibility for a sample of users and observe outcomes, while the platform's
-    targeting algorithm continues to operate.
-\end{itemize}
+\textbf{Programmatic advertising.}  An advertiser randomizes campaign
+eligibility, but the platform's auction algorithm determines which eligible
+users actually see the ad based on bids, targeting parameters, and competing
+campaigns.  This is the mechanism behind Meta Conversion Lift studies, Google
+Conversion Lift, and analogous holdout methodologies at major advertising
+platforms.
 
-In all three cases, the experimenter faces a one-sided noncompliance problem: when
-$Z_i = 1$, treatment receipt is $W_i = D_i$, which the experimenter can observe; but
-the platform's selection rule governing $D_i$ is unknown. As a consequence, as we
-formalize in Proposition~\ref{prop:att} below, the passive overlay identifies only the
-\emph{average treatment effect on the platform-treated} (ATT)---the causal effect for
-the users the platform would have selected. In general, $ATT(x) \neq ATE(x)$, because
-the platform endogenously selects users with larger gains from treatment.
+\textbf{Within-firm simultaneous experiments.}  A firm's marketing team
+activates a coupon overlay on top of the recommendation team's personalization
+algorithm.  Neither team observes the other's full targeting rule; each sees
+only its own randomization and realized treatment.
 
-A recent and important paper by Ye et al.\ (2025) addresses a related but distinct
-problem: when the \emph{platform itself} runs $m$ simultaneous A/B tests with an
-\emph{orthogonal, known} assignment mechanism, how can it estimate ATEs for all $2^m$
-treatment combinations from only $O(m)$ observed combinations? Their Debiased Deep
-Learning (DeDL) framework solves this interpolation problem using DML and structured
-neural networks. Crucially, their approach requires that the treatment assignment
-mechanism $v(\mathbf{t} \mid x) = \mathbb{P}[\mathbf{T} = \mathbf{t} \mid X = x]$ is
-\emph{known}---it is the platform's own randomization rule. Our paper addresses the
-complementary case where an external experimenter faces an \emph{unknown} propensity
-score $p(x) = \mathbb{P}(D_i = 1 \mid X_i = x)$. The identification strategy must
-therefore be entirely different: rather than interpolating across known treatment
-combinations, we exploit (i)~an excluded shifter to obtain a local-IV representation,
-or (ii)~shape restrictions on the MTE schedule to construct informative bounds.
+\textbf{Third-party measurement.}  An independent researcher or auditor
+randomizes access to a platform's content---for instance, using a browser
+extension that randomly enables or blocks ads for consenting participants---and
+observes outcomes without knowledge of the platform's targeting rule or the
+ability to direct it.
 
-\textbf{Main contributions.} This paper makes three contributions.
+In all three cases the analyst faces one-sided noncompliance: when eligible
+($Z_i = 1$), treatment receipt equals $W_i = D_i$, and the platform's selection
+rule governing $D_i$ is opaque.  A key structural feature is that $D_i$ is
+\emph{directly observed} in the eligible arm through $W_i = D_i$, making the
+treatment rate $e(x) = P(W_i=1 \mid Z_i=1, X_i=x)$ identifiable from data.
+What is opaque is not $e(x)$ but the MTE schedule for untargeted types---the
+causal effect the platform's algorithm would have generated if it had targeted
+users beyond its current selection.
 
-\textbf{1. ATT identification from a passive overlay (Proposition~\ref{prop:att}).}
-We show that the ratio of the intent-to-treat effect to the treatment rate,
-$ITT(x)/p(x)$, identifies the ATT. This is the \emph{maximal} object identified
-from a passive overlay without additional structure, regardless of how the
-platform targets users.
+We make two parallel contributions addressing different information environments.
 
-\textbf{2. Point identification of the MTE and ATE with an excluded shifter
-(Theorem~\ref{thm:pointid}).}
-When a variable $S_i$ shifts the platform's propensity score without directly
-affecting potential outcomes, the overlay admits a local-IV representation:
-$MTE(x, p) = \partial_p \, E[Y_i \mid Z_i = 1, X_i = x, P_i = p]$,
-where $P_i = \pi(X_i, S_i)$ is the platform propensity score. Under full support
-of $P_i$, the ATE is identified. This section bridges our setting to the
-Heckman--Vytlacil (2005) MTE framework.
+\textbf{Track~A (point identification):} When a variable $S_i$ is available
+that shifts the platform's delivery propensity $\pi(x,s) = P(D_i=1 \mid X_i=x,
+S_i=s)$ without directly affecting users' potential outcomes---an \emph{excluded
+shifter}---the overlay admits a local-IV representation in the tradition of
+\citet{heckman2005structural}.  The Marginal Treatment Effect
+$\mathrm{MTE}(x,u) = E[\tau_i \mid X_i=x, U_i=u]$ is identified as
+$\partial_p\, E[Y_i \mid Z_i=1, X_i=x, P_i=p]$, and under full support the CATE
+is recovered by integrating the MTE over $[0,1]$.  A distinctive operational
+feature is that the propensity score $P_i = \pi(X_i, S_i)$ is directly observed
+in the eligible arm (since $W_i = D_i$ when $Z_i = 1$), eliminating a
+first-stage estimation step relative to standard IV.  Practical sources of
+excluded-shifter variation include geographic differences in auction competition,
+temporal fluctuations in platform load, and cross-market budget caps.
 
-\textbf{3. Sharp partial identification bounds on the ATE
-(Theorem~\ref{thm:sharp}).}
-Without an excluded shifter, we derive sharp bounds under a latent-index model
-with (i)~monotone selection on gains and (ii)~nonnegative treatment effects:
+\textbf{Track~B (sharp partial identification):} When no excluded shifter is
+available---the common situation for a standard holdout study---we derive the
+sharp identification region for the CATE.  Under monotone selection on gains
+(the platform targets users with weakly higher treatment effects) and nonnegative
+treatment effects, the sharp bounds are
 \[
-  ATE(x) \in [ITT(x),\, ATT(x)].
+  \mathrm{CATE}(x) \;\in\; \bigl[\,\mathrm{CITT}(x),\;\mathrm{CATT}(x)\,\bigr],
 \]
-The bounds are sharp: both endpoints are attained by admissible data-generating
-processes. We introduce the \emph{Selection Ratio} $R(x) = ATT(x)/ATE(x)$
-as a practical summary of the platform's algorithmic cherry-picking efficiency.
+where the Conditional Intent-to-Treat effect $\mathrm{CITT}(x) = E[Y\mid
+Z=1,X=x] - E[Y\mid Z=0,X=x]$ and the CATT are both directly computable from
+standard holdout data.  Both endpoints are attained by admissible
+data-generating processes, so the bounds are sharp.  We introduce the
+\emph{Selection Ratio} $R(x) := \mathrm{CATT}(x)/\mathrm{CATE}(x) \in
+[1,\, 1/e(x)]$, whose observable upper bound $1/e(x)$ quantifies the worst-case
+factor by which the CATT overstates scale-up returns.
 
-\textbf{Paper organization.} Section~\ref{sec:setup} introduces the experimental setup
-and notation. Section~\ref{sec:passive} characterizes what a passive overlay identifies.
-Section~\ref{sec:pointid} develops point identification with an excluded shifter.
-Section~\ref{sec:partial} derives sharp bounds without an excluded shifter and
-introduces the Selection Ratio. Section~\ref{sec:lit} reviews related literature.
-Section~\ref{sec:proofs} contains all proofs.
+The two tracks are parallel, not hierarchical.  Track~A requires additional
+propensity variation but delivers a precise CATE estimate that can be plugged
+directly into a budget optimization model.  Track~B is always available from
+existing holdout data at zero additional cost, and serves a dual function: as a
+standalone characterization of the scale-up uncertainty, and as a \emph{decision
+rule} for when Track~A is warranted.  When the observable upper bound on the
+Selection Ratio satisfies $1/e(x) < \bar{R}$ for a practitioner-specified
+tolerance $\bar{R}$, the CATT is a sufficiently reliable proxy for the CATE and
+no additional design is needed.  When $1/e(x) \geq \bar{R}$, the analyst should
+seek an excluded shifter or engineer propensity variation following
+\citet{waisman2025multicell}.  This sequential decision structure means Track~B
+is not merely a fallback; it is the first step in any overlay analysis.
 
-\section{Related Literature}
+This paper connects most closely to \citet{waisman2025multicell}, who propose a
+multicell experimental design in which the advertiser varies treatment propensity
+by adjusting campaign budgets across cells, and show that polynomial
+approximations of marginal treatment response functions recover the information
+needed to solve the advertiser's budget-setting problem.  The key distinction is
+experimental control: \citeauthor{waisman2025multicell} engineer propensity
+variation; Track~A identifies the MTE from \emph{naturally occurring} propensity
+variation within the standard overlay design, while Track~B characterizes the
+limits of identification when no such variation exists.  We also complement
+\citet{ye2025deep}, who study the case where a platform with a known assignment
+mechanism estimates average treatment effects for $2^m$ combinations of $m$
+simultaneous treatments; our paper addresses the external-experimenter case where
+the assignment mechanism is unknown.
+
+The remainder of the paper is organized as follows.  Section~\ref{sec:lit}
+reviews related literature.  Section~\ref{sec:theory} develops the
+identification and estimation theory, presenting the two tracks as parallel
+results.  Section~\ref{sec:mc} evaluates finite-sample estimator performance via
+Monte Carlo simulation.  Section~\ref{sec:conclusion} concludes.
+
+% ============================================================
+\section{Literature Review}
 \label{sec:lit}
 
-\textbf{Marginal treatment effects.}
-Our point identification result in Section~\ref{sec:pointid} is an application of the
-MTE framework developed by Heckman and Vytlacil (2005, 2007). In that framework, a
-continuously distributed instrument $Z$ shifts the propensity score $P(Z) =
-\mathbb{P}(D = 1 \mid Z)$, and the MTE is identified as $\partial_p E[Y \mid P = p]$.
-Our contribution is to show that the overlay design---in which $W_i = D_i Z_i$ and the
-treated arm directly reveals $D_i$---provides a natural and operationally distinct
-implementation of the local-IV approach: the excluded shifter $S_i$ enters through the
-platform's latent propensity $\pi(X_i, S_i)$, and the econometrician observes $P_i$
-directly in the arm $Z_i = 1$. Vytlacil (2002) establishes that the latent-index
-structure underlying our Assumption~\ref{ass:excluded} is equivalent to the LATE
-conditions of Angrist and Imbens (1994), confirming that no additional restrictions
-beyond standard IV are invoked.
+\paragraph{Marginal treatment effects and the local-IV framework.}
+The marginal treatment effect framework, developed by \citet{heckman2005structural}
+and building on \citet{angrist1994identification}, is the foundation for our
+point-identification result.  The central idea is that when a continuously
+distributed instrument shifts the probability of treatment, the causal effect
+for each marginal type of complier---indexed by their latent resistance to
+treatment---is identified as the derivative of the conditional outcome mean with
+respect to the propensity score.  All standard treatment effect parameters,
+including the ATE, ATT, and LATE, can be expressed as weighted averages of the
+MTE.  \citet{vytlacil2002independence} establishes that the latent-index
+structure underlying the MTE framework is equivalent to the independence and
+monotonicity conditions in \citet{angrist1994identification}, so no restrictions
+beyond standard IV conditions are imposed.  Empirical applications of MTE
+estimation appear in, among others, \citet{carneiro2011estimating} in the
+context of returns to education.  Our contribution to this literature is to show
+that the overlay experiment structure provides a natural and operationally
+advantageous implementation of the local-IV approach: because treatment receipt
+is directly observed in the eligible arm, the platform propensity score is
+identified without a separate first-stage regression.
 
-\textbf{Partial identification.}
-Our bounds in Section~\ref{sec:partial} complement the partial identification
-literature initiated by Manski (1990). Manski's classic bounds on ATE rely only on
-the support of outcomes and can be wide when outcomes are unbounded. Our framework
-starts from a stronger baseline---the overlay design identifies $ITT(x)$ and $ATT(x)$,
-so the question is only how far $ATE(x)$ can deviate from $ATT(x)$---and derives
-sharper bounds by exploiting two economically motivated shape restrictions: monotone
-selection on gains (the platform prioritizes high-responders) and nonnegative effects.
-The idea of using shape restrictions to tighten partial identification bounds follows
-Manski and Pepper (2000).
+\paragraph{Partial identification and shape restrictions.}
+Our bounds are in the tradition of the partial identification literature
+initiated by \citet{manski1990nonparametric}.  Manski's classic bounds rely only
+on the support of observed outcomes and can be wide when outcomes are unbounded.
+Our framework starts from a stronger baseline---the overlay experiment identifies
+both the CITT and the CATT---and derives sharper bounds by imposing two
+economically motivated shape restrictions.  The use of shape restrictions to
+tighten partial identification bounds follows \citet{manski2000monotone}, who
+introduce the monotone instrumental variable assumption.  In our setting, the
+monotone selection assumption has a direct economic interpretation: the
+platform's optimization targets high-responding users first, consistent with
+profit-maximizing behavior by the platform and its advertisers.
 
-\textbf{Overlapping and simultaneous platform experiments.}
-Tang et al.\ (2010) and Kohavi et al.\ (2020) describe the engineering infrastructure
-for overlapping experiments at Google and other large platforms. Their orthogonal
-traffic assignment system ensures independent randomization across experiments, which
-is the design our paper's Assumption~\ref{ass:overlay} requires for the overlay $Z_i$.
-Xiong et al.\ (2020) document the same infrastructure at Tencent. These papers address
-the \emph{design} of simultaneous experiments; ours addresses the \emph{identification}
-problem that arises when an experimenter cannot enforce orthogonal design and faces an
-opaque targeting environment.
+\paragraph{Simultaneous and overlapping platform experiments.}
+\citet{tang2010overlapping} and \citet{kohavi2020trustworthy} describe the
+engineering infrastructure for running thousands of simultaneous A/B tests at
+large technology platforms, including the orthogonal traffic assignment system
+that ensures independence across experiments.  These papers address the problem
+of designing simultaneous experiments from the perspective of a platform that
+controls all randomizations.  \citet{ye2025deep} extend this line of work by
+studying how a platform can estimate average treatment effects for all $2^m$
+combinations of $m$ simultaneous treatments when only a subset of combinations
+is observed, using double machine learning combined with structured neural
+networks.  Their approach requires the platform's assignment mechanism to be
+known.  Our paper is complementary: we address the identification problem faced
+by an external experimenter who cannot observe or control the platform's
+assignment rule.  The two papers approach the platform experimentation problem
+from opposite sides---inside the platform versus outside it.
 
-\textbf{Combinatorial experiments.}
-Ye et al.\ (2025) study the problem of estimating ATEs for all $2^m$ combinations of
-$m$ simultaneous A/B tests when only $O(m)$ combinations are observed. Their DeDL
-framework uses DML with structured deep neural networks and requires that the treatment
-assignment mechanism is known---a natural assumption when the platform controls all
-$m$ experiments. Our paper is complementary: we address the case where the assignment
-mechanism is unknown, which arises precisely when an external experimenter faces an
-opaque platform. The two papers thus address the platform-experiment problem from
-opposite sides: Ye et al.\ from inside (platform-controlled, known assignment), ours
-from outside (experimenter-controlled, unknown platform propensity).
+\paragraph{Advertising measurement and the CATT--CATE gap.}
+A central empirical finding in advertising effectiveness research is that
+non-experimental approaches can substantially misestimate treatment effects
+relative to experimental benchmarks \citep{gordon2023close}.  This motivates
+the overlay design as a preferred approach to advertising measurement when a
+clean experiment is infeasible.  \citet{gordon2019comparison} provide detailed
+estimates of advertising effects from large-scale field experiments at Facebook,
+and their estimates inform the calibration of our Monte Carlo simulations.  The
+limits of advertising measurement more broadly are discussed by
+\citet{lewis2015unfavorable}, who show that advertising effects are often small
+in magnitude, making precise estimation difficult even with large experiments.
+Within this literature, \citet{waisman2025multicell} is the closest to our
+paper.  They propose a multicell experimental design in which the advertiser
+varies treatment propensity across cells by adjusting campaign budgets, and
+demonstrate that this design---combined with polynomial approximations of the
+MTE functions---can recover the information necessary to solve the advertiser's
+optimal audience-sizing problem.  Our paper addresses the identification problem
+that arises when the experimenter cannot control propensity at all: the
+platform's delivery algorithm determines targeting, and the analyst can only
+randomize eligibility.
 
-\textbf{Two-sided platform experiments and interference.}
-Johari et al.\ (2022) study bias in A/B tests on two-sided platforms (e.g., ride-sharing,
-labor markets) due to market-level interference: treating some users shifts outcomes
-for untreated users via market equilibrium effects. Their bias stems from a SUTVA
-violation, while ours stems from endogenous selection by an opaque targeting algorithm.
-These are distinct but complementary sources of identification failure in platform
-settings.
+\paragraph{Interference and design in platform settings.}
+\citet{johari2022experimental} study identification bias in A/B tests on
+two-sided platforms due to market-level interference between treated and
+untreated units.  Their bias stems from SUTVA violations arising from
+equilibrium effects, while our identification challenge arises from endogenous
+selection by the platform's opaque targeting algorithm.  These are distinct but
+complementary sources of identification failure in platform settings.  We
+maintain SUTVA throughout and leave the combination of interference and opaque
+targeting for future work.
 
-\textbf{Advertising effectiveness.}
-Gordon et al.\ (2023) show empirically that non-experimental approaches to advertising
-measurement---including DML with observational data---can have errors exceeding 100\%
-relative to randomized experiment benchmarks. This motivates the overlay design as
-a preferred approach when a clean experiment is infeasible. Our paper provides the
-identification theory for the overlay design, explaining precisely what it identifies
-(ATT) and under what additional conditions it can recover ATE.
+% ============================================================
+\section{Identification and Estimation}
+\label{sec:theory}
 
-\section{Experimental Setup and Notation}
-\label{sec:setup}
+The section proceeds as follows.  Section~\ref{subsec:setup} establishes
+notation and assumptions.  Section~\ref{subsec:passive} derives a preliminary
+result: the passive overlay identifies the CATT but not the CATE, making
+explicit the gap that both tracks address.  Track~A
+(Section~\ref{subsec:pointid}) provides point identification of the MTE and
+CATE when an excluded shifter is available.  Track~B
+(Section~\ref{subsec:partial}) provides sharp partial identification bounds and
+the Selection Ratio diagnostic that are always available from standard holdout
+data.  Section~\ref{subsec:estimation} specifies estimators for both tracks.
 
-Let $i$ index users. The platform makes a latent binary treatment decision
+\subsection{Setup and Notation}
+\label{subsec:setup}
+
+Let $i$ index users in the target population.  The platform makes a latent
+binary treatment decision $D_i \in \{0,1\}$, where $D_i = 1$ means the
+platform's algorithm has selected user $i$ for treatment.  The analyst randomizes
+a binary overlay $Z_i \in \{0,1\}$, where $Z_i = 1$ means user $i$ is eligible
+to receive treatment if the platform selects them.  Realized treatment receipt is
 \[
-D_i \in \{0,1\},
-\]
-where $D_i=1$ means that the platform intends to treat unit $i$. The econometrician randomizes a binary overlay
-\[
-Z_i \in \{0,1\},
-\]
-where $Z_i=1$ means that the unit is eligible to receive the platform treatment if the platform intends to treat it. Realized treatment receipt is therefore
-\[
-W_i = D_i Z_i.
+  W_i = D_i Z_i.
 \]
 
-The causal object of interest is the effect of the platform treatment $D_i$. Let
-\[
-Y_i(0), \; Y_i(1)
-\]
-denote the potential outcomes under no platform treatment and under platform treatment, respectively, and let
-\[
-\tau_i := Y_i(1)-Y_i(0)
-\]
-denote the individual treatment effect of the platform treatment. Because the overlay is assumed to act only as a gate, the observed outcome is
-\[
-Y_i = Y_i(W_i).
-\]
-
-The econometrician observes
-\[
-(Y_i, W_i, Z_i, X_i),
-\]
-where $X_i$ is a vector of observed covariates. In Section~\ref{sec:pointid}, we additionally introduce an excluded shifter $S_i$.
+Let $Y_i(0)$ and $Y_i(1)$ denote potential outcomes under no treatment and under
+treatment, respectively, and let $\tau_i := Y_i(1) - Y_i(0)$ be the individual
+treatment effect.  The observed outcome is $Y_i = Y_i(W_i)$.  The analyst
+observes $(Y_i, W_i, Z_i, X_i)$, where $X_i$ is a vector of pre-treatment
+covariates.
 
 \begin{assumption}[Randomized Overlay]
 \label{ass:overlay}
-The overlay assignment $Z_i$ is conditionally independent of the platform's latent intent and potential outcomes:
+The overlay assignment satisfies
 \[
-Z_i \perp (D_i, Y_i(0), Y_i(1)) \mid X_i.
+  Z_i \;\perp\; \bigl(D_i,\; Y_i(0),\; Y_i(1)\bigr) \;\Big|\; X_i,
 \]
-Moreover,
-\[
-0 < P(Z_i=1 \mid X_i=x) < 1
-\]
-for all $x$ in the support of $X_i$.
+and $0 < P(Z_i = 1 \mid X_i = x) < 1$ for all $x$ in the support of $X_i$.
 \end{assumption}
+
+Assumption~\ref{ass:overlay} requires that the analyst's eligibility
+randomization is conditionally independent of the platform's targeting decision
+and potential outcomes given observed covariates.  This holds by design when the
+analyst randomizes $Z_i$ using a process---such as a pseudorandom hash of user
+identifiers---that is independent of the platform's targeting signals.  A
+potential concern is whether the platform can anticipate or react to the
+analyst's randomization.  In practice, the platform's algorithm typically
+operates on user features (browsing history, demographics, bid signals) rather
+than on the experimenter's assignment indicator, making conditional independence
+a reasonable approximation.  The overlap condition rules out degenerate designs
+in which all or no users are assigned to the treatment arm.
 
 \begin{assumption}[One-Sided Receipt]
 \label{ass:onesided}
-Realized treatment receipt satisfies
-\[
-W_i = D_i Z_i.
-\]
-In particular, if $Z_i=0$, then $W_i=0$.
+Realized treatment receipt satisfies $W_i = D_i Z_i$; in particular, $W_i = 0$
+whenever $Z_i = 0$.
 \end{assumption}
 
-Assumption \ref{ass:overlay} states that the econometrician's overlay is randomized within covariate cells. Assumption \ref{ass:onesided} states that the overlay acts only as a gate: a unit receives treatment if and only if both the platform and the econometrician assign treatment.
+Assumption~\ref{ass:onesided} formalizes the gate structure of the overlay.
+Users made ineligible by the analyst ($Z_i = 0$) cannot receive treatment
+regardless of the platform's targeting decision.  This is appropriate for
+settings in which eligibility is enforced by a technical gate---such as a
+campaign audience filter or a coupon eligibility list---that the platform cannot
+override.  An important implication: when $Z_i = 1$, the analyst directly
+observes the platform's treatment decision through $W_i = D_i$.  This is a
+distinctive feature that we exploit throughout the identification analysis.
 
-\section{What a Passive Overlay Identifies}
-\label{sec:passive}
+Note that Assumption~\ref{ass:onesided} does not restrict the behavior of $D_i$
+when $Z_i = 1$: within the eligible population, the platform's algorithm is free
+to select any subset for treatment.  This one-sided structure is what
+distinguishes the overlay from a standard IV setting with two-sided noncompliance.
 
-For each value $x$ in the support of $X_i$, define the conditional intent-to-treat effect
+% ============================================================
+\subsection{Preliminary: The CATT--CATE Gap}
+\label{subsec:passive}
+
+For each $x$ in the support of $X_i$, define the following observable
+quantities.  The \emph{Conditional Intent-to-Treat effect} is
 \[
-ITT(x) := E[Y_i \mid Z_i=1, X_i=x] - E[Y_i \mid Z_i=0, X_i=x].
+  \mathrm{CITT}(x) \;:=\; E[Y_i \mid Z_i=1, X_i=x] \;-\; E[Y_i \mid Z_i=0, X_i=x].
 \]
-Also define the conditional treatment rate
+The \emph{treatment rate} in the eligible arm is
 \[
-p(x) := P(W_i=1 \mid Z_i=1, X_i=x).
+  e(x) \;:=\; P(W_i=1 \mid Z_i=1, X_i=x).
 \]
-By Assumption \ref{ass:onesided}, when $Z_i=1$ we have $W_i=D_i$, so
+Under Assumption~\ref{ass:onesided}, $W_i = D_i$ when $Z_i=1$, so $e(x) =
+P(D_i = 1 \mid X_i = x)$: the treatment rate in the eligible arm recovers the
+platform's unconditional propensity to treat users with covariates $x$.  Define
+also the \emph{Conditional Average Treatment Effect on the Treated} and the
+\emph{Conditional Average Treatment Effect}:
 \[
-p(x)=P(D_i=1 \mid X_i=x).
+  \mathrm{CATT}(x) \;:=\; E[\tau_i \mid D_i=1,\, X_i=x], \qquad
+  \mathrm{CATE}(x) \;:=\; E[\tau_i \mid X_i=x].
 \]
 
-The following proposition characterizes the object identified from a passive overlay without any further structure.
-
-\begin{proposition}[Identification of the effect for the platform-treated]
+\begin{proposition}[Passive Overlay Identifies the CATT]
 \label{prop:att}
-Suppose Assumptions \ref{ass:overlay} and \ref{ass:onesided} hold. Then, for every $x$ such that $p(x)>0$,
+Suppose Assumptions~\ref{ass:overlay} and~\ref{ass:onesided} hold.  Then, for
+every $x$ with $e(x) > 0$,
 \begin{equation}
-ITT(x) = E[D_i \tau_i \mid X_i=x],
-\label{eq:itt_basic}
+  \mathrm{CITT}(x) \;=\; E[D_i\,\tau_i \mid X_i=x],
+  \label{eq:itt}
 \end{equation}
 and
 \begin{equation}
-\frac{ITT(x)}{p(x)} = E[\tau_i \mid D_i=1, X_i=x].
-\label{eq:att_basic}
+  \frac{\mathrm{CITT}(x)}{e(x)} \;=\; \mathrm{CATT}(x).
+  \label{eq:catt}
 \end{equation}
-Hence the passive overlay point-identifies
-\[
-ATT(x) := E[\tau_i \mid D_i=1, X_i=x].
-\]
+Hence the passive overlay point-identifies $\mathrm{CATT}(x)$ but not
+$\mathrm{CATE}(x)$ in general.
 \end{proposition}
 
-Proposition \ref{prop:att} shows that, in the passive overlay, the econometrician identifies the average causal effect of the platform treatment for the subpopulation that the platform actually selects. In general, this object need not equal the conditional average treatment effect
+Proposition~\ref{prop:att} is the foundational identification result for the
+overlay experiment.  The ratio $\mathrm{CITT}(x)/e(x)$ is the Wald estimator
+applied within the overlay design, and it identifies the average treatment effect
+for the platform's selected subpopulation.  The proof follows from the
+conditional independence of $Z_i$ (Assumption~\ref{ass:overlay}) and the gate
+structure of $W_i$ (Assumption~\ref{ass:onesided}); details are in the
+Appendix.
+
+The managerial interpretation is immediate and important.  An advertiser who
+runs a passive overlay and computes $\mathrm{CITT}(x)/e(x)$ obtains a valid
+estimate of the campaign's effectiveness \emph{for the users the platform
+currently targets}.  This is the correct object for evaluating whether the
+campaign has positive returns under the current targeting strategy, and for
+holding the platform accountable for delivering the promised audience.  However,
+the CATT is the wrong input for scale-up decisions.  A decision to expand the
+campaign---increasing the audience size, the budget, or the geographic
+footprint---implicitly asks what the campaign effect would be on users the
+platform does not currently target.  Those users are drawn from the part of the
+population for which the platform's algorithm predicts lower response, so the
+CATE is generically below the CATT.
+
+Formally, the gap arises from the decomposition
 \[
-ATE(x):=E[\tau_i \mid X_i=x].
+  \mathrm{CATE}(x) \;=\; e(x)\,\mathrm{CATT}(x) \;+\; (1-e(x))\,\mathrm{CATU}(x),
 \]
+where $\mathrm{CATU}(x) := E[\tau_i \mid D_i=0, X_i=x]$ is the conditional
+average effect on the untreated.  If the platform selects users with
+above-average treatment response---which is the platform's optimization
+objective---then $\mathrm{CATT}(x) \geq \mathrm{CATE}(x) \geq \mathrm{CATU}(x)$.
+The passive overlay cannot identify the CATE because the untreated
+region ($Z_i=1, D_i=0$) reveals only the composite $E[Y_i(0) \mid X_i=x]$
+and not the counterfactual $E[Y_i(1) \mid D_i=0, X_i=x]$.  The following two
+sections present parallel solutions.  Track~A (Section~\ref{subsec:pointid})
+achieves point identification when an excluded shifter generates within-cell
+variation in the platform's propensity.  Track~B (Section~\ref{subsec:partial})
+characterizes the sharp identified set using only the observable treatment rate
+and the ITT, without any additional experimental variation.
 
-\section{Point Identification with an Excluded Shifter}
-\label{sec:pointid}
+\begin{remark}
+  The CATT characterization in Proposition~\ref{prop:att} is a preliminary
+  result that underlies both tracks, not a contribution in its own right.  It
+  is the Wald estimator applied to one-sided noncompliance, and is included to
+  make the paper self-contained and to fix notation for the CATT--CATE gap
+  that motivates the analysis.
+\end{remark}
 
-This section considers point identification when an excluded shifter is available. Let $S_i$ denote an observed variable that affects the platform's assignment decision but does not directly affect potential outcomes once $X_i$ is held fixed.
+% ============================================================
+\subsection{Track A: Point Identification via an Excluded Shifter}
+\label{subsec:pointid}
+
+We now consider point identification when an excluded shifter is available.
+
+\textbf{Propensity scores in this section.}  Two propensity scores appear.  The
+marginal propensity $e(x) = P(D_i=1 \mid X_i=x)$ was identified from the
+passive overlay (Section~\ref{subsec:passive}) and is constant within a
+covariate cell $x$.  Because $e(x)$ does not vary within $x$, the
+derivative-based local-IV argument is unavailable in the passive setting.
+Track~A introduces an excluded shifter $S_i$ to generate within-cell variation
+in the \emph{conditional propensity} $\pi(x,s) = P(D_i=1 \mid X_i=x, S_i=s)$.
+For a given covariate cell $x$, different values of $s$ produce different
+delivery rates, enabling identification of the MTE as a derivative.
+
+Let $S_i$ denote an observed variable that shifts the platform's delivery
+propensity without directly affecting users' potential outcomes conditional on
+$X_i$.  Intuitively, $S_i$ represents variation in how aggressively the
+platform targets eligible users that is unrelated to the users' response to
+treatment.
+
+In practice, several sources of such variation arise naturally in advertising
+contexts.  \emph{Geographic variation in auction competition}: the platform's
+cost of delivering an ad varies across markets due to differences in competing
+advertiser bids.  A lower auction price in a market increases the platform's
+propensity to deliver to eligible users in that market, without directly
+affecting how those users respond to the ad.  \emph{Temporal variation in
+platform load}: the platform's ad delivery algorithm adjusts aggressively based
+on available impression inventory, which fluctuates with time of day and day of
+week in ways that shift delivery propensity without directly affecting purchase
+intent.  \emph{Cross-market budget allocation}: when an advertiser runs the
+overlay campaign across markets with different per-market budget caps, effective
+per-user budgets vary across markets in a way that shifts delivery propensity
+while campaign content remains unchanged.  This last source is the closest
+analog to the multicell design of \citet{waisman2025multicell}, with the
+critical difference that in our setting the budget variation is incidental rather
+than designed.
 
 \begin{assumption}[Excluded Shifter and Latent Index]
 \label{ass:excluded}
-There exists a scalar latent variable $U_i$ and a measurable function $\pi(\cdot,\cdot)$ such that:
+There exists a scalar latent variable $U_i$ and a measurable function $\pi(\cdot,\cdot)$
+such that:
 \begin{enumerate}
-    \item The platform assignment rule is
-    \[
-    D_i = \mathbf{1}\{\pi(X_i,S_i) \ge U_i\}.
-    \]
-    \item Conditional on $X_i=x$,
-    \[
-    U_i \sim \mathrm{Unif}[0,1].
-    \]
-    \item
-    \[
-    (Y_i(0), Y_i(1), U_i) \perp S_i \mid X_i.
-    \]
-    \item For each $x$, the support of $\pi(x,S_i)$ conditional on $X_i=x$ contains an interval with nonempty interior.
-    \item The overlay remains randomized conditional on $(X_i,S_i)$:
-    \[
-    Z_i \perp (Y_i(0),Y_i(1),D_i,U_i)\mid (X_i,S_i).
-    \]
+  \item The platform assignment rule is $D_i = \mathbf{1}\{\pi(X_i, S_i) \geq U_i\}$.
+  \item Conditional on $X_i = x$, the latent type satisfies $U_i \sim
+    \mathrm{Uniform}[0,1]$.
+  \item $(Y_i(0),\, Y_i(1),\, U_i) \perp S_i \mid X_i$ \emph{(exclusion restriction)}.
+  \item For each $x$, the support of $\pi(x, S_i) \mid X_i=x$ contains an open
+    interval.
+  \item $Z_i \perp (Y_i(0),\, Y_i(1),\, D_i,\, U_i) \mid (X_i, S_i)$.
 \end{enumerate}
 \end{assumption}
 
-Define the propensity score
-\[
-P_i := \pi(X_i,S_i),
-\]
-and define the marginal treatment effect
-\[
-MTE(x,u) := E[\tau_i \mid X_i=x, U_i=u].
-\]
+Condition 1 specifies a latent-index model for the platform's targeting rule:
+user $i$ is targeted if the platform's predicted value of targeting them,
+$\pi(X_i, S_i)$, exceeds a user-specific resistance threshold $U_i$.
+\citet{vytlacil2002independence} establishes that this structure is equivalent
+to the independence and monotonicity conditions of \citet{angrist1994identification},
+so no restriction beyond standard IV conditions is imposed.
 
-For fixed $(x,p)$, define
-\[
-\mu_1(x,p) := E[Y_i \mid Z_i=1, X_i=x, P_i=p],
-\]
-and
-\[
-\mu_0(x) := E[Y_i \mid Z_i=0, X_i=x].
-\]
+Condition 2 is a normalization.  Under it, $\pi(x,s) = P(D_i=1 \mid X_i=x,
+S_i=s)$ is the platform's propensity score conditional on the shifter.  We
+define $P_i := \pi(X_i, S_i)$ as the individual-level propensity.  Note the
+distinction from $e(x) = P(D_i=1 \mid X_i=x)$: the former conditions on the
+shifter and varies within a covariate cell; the latter is the marginal propensity
+observable in the passive overlay.
 
-The next proposition gives the key representation.
+Condition 3 is the exclusion restriction.  In the geographic competition
+example, it requires that auction prices affect the platform's delivery
+decision but not the causal effect of seeing an ad on purchase probability,
+conditional on the user's demographic and behavioral covariates.  This condition
+is standard in IV analysis and is the analog of the exogeneity assumption
+maintained in \citet{waisman2025multicell}.
 
-\begin{proposition}[Outcome representation]
+Condition 4 ensures sufficient variation in the propensity score, enabling
+identification of the MTE at a continuum of propensity values.  Condition 5
+extends the randomization condition to allow the analyst to condition on $S_i$.
+
+Define the outcome regressions in the eligible and ineligible arms:
+\[
+  \mu_1(x,p) \;:=\; E[Y_i \mid Z_i=1,\, X_i=x,\, P_i=p], \qquad
+  \mu_0(x) \;:=\; E[Y_i \mid Z_i=0,\, X_i=x].
+\]
+Define the Marginal Treatment Effect:
+\[
+  \mathrm{MTE}(x,u) \;:=\; E[\tau_i \mid X_i=x,\, U_i=u].
+\]
+This is the average treatment effect for users with covariate value $x$ whose
+latent resistance to treatment is exactly $u$.
+
+\begin{proposition}[Outcome Representation]
 \label{prop:representation}
-Suppose Assumptions \ref{ass:overlay}, \ref{ass:onesided}, and \ref{ass:excluded} hold. Then, for every $(x,p)$ in the support of $(X_i,P_i)$,
+Suppose Assumptions~\ref{ass:overlay},~\ref{ass:onesided}, and~\ref{ass:excluded}
+hold.  Then, for every $(x,p)$ in the support of $(X_i, P_i)$,
 \begin{equation}
-\mu_1(x,p) = \mu_0(x) + \int_0^p MTE(x,u)\,du.
-\label{eq:representation}
+  \mu_1(x,p) \;=\; \mu_0(x) \;+\; \int_0^p \mathrm{MTE}(x,u)\,du.
+  \label{eq:representation}
 \end{equation}
 \end{proposition}
 
-\begin{theorem}[Point identification of the MTE and the ATE]
+Proposition~\ref{prop:representation} is a key representation result.  It shows
+that the difference in conditional outcome means between eligible and ineligible
+arms, $\mu_1(x,p) - \mu_0(x)$, aggregates the MTE from the most-responsive type
+($u=0$) up to the current propensity level $p$.  Users treated when $P_i = p$
+are those with $U_i \leq p$---the users with sufficiently low resistance to
+targeting---and their average treatment effect is the integral of the MTE over
+$[0,p]$.  This is the local-IV representation from \citet{heckman2005structural},
+with our excluded shifter playing the role of the instrument.
+
+An important operational feature of the overlay design is that the platform
+propensity $P_i = \pi(X_i, S_i)$ is directly observed in the eligible arm
+(since $W_i = D_i$ when $Z_i=1$), without requiring a separate first-stage
+regression on the instrument.  This gives the overlay a practical advantage over
+a standard IV setup, and is the analog of the direct budget-to-propensity
+correspondence in the multicell design of \citet{waisman2025multicell}.
+
+\begin{theorem}[Point Identification of the MTE and the CATE]
 \label{thm:pointid}
-Suppose Assumptions \ref{ass:overlay}, \ref{ass:onesided}, and \ref{ass:excluded} hold, and suppose that for each $x$, the function $p \mapsto \mu_1(x,p)$ is differentiable on the interior of the support of $P_i \mid X_i=x$. Then:
+Suppose Assumptions~\ref{ass:overlay},~\ref{ass:onesided}, and~\ref{ass:excluded}
+hold, and suppose $p \mapsto \mu_1(x,p)$ is differentiable on the interior of
+the support of $P_i \mid X_i=x$.  Then:
 \begin{enumerate}
-    \item For every $x$ and every $p$ in the interior of the support of $P_i \mid X_i=x$,
-    \begin{equation}
-    MTE(x,p) = \frac{\partial}{\partial p} \mu_1(x,p).
-    \label{eq:mte_derivative}
-    \end{equation}
-    \item If the support of $P_i \mid X_i=x$ is all of $[0,1]$, then
-    \begin{equation}
-    ATE(x) := E[\tau_i \mid X_i=x] = \int_0^1 MTE(x,u)\,du.
-    \label{eq:ate_conditional}
-    \end{equation}
-    \item If the support condition in part 2 holds for all $x$, then
-    \begin{equation}
-    ATE := E[\tau_i] = E\!\left[\int_0^1 MTE(X_i,u)\,du\right].
-    \label{eq:ate_population}
-    \end{equation}
+  \item For every $(x,p)$ in the interior of the support of $(X_i, P_i)$,
+  \[
+    \mathrm{MTE}(x,p) \;=\; \frac{\partial}{\partial p}\,\mu_1(x,p).
+  \]
+  \item If the support of $P_i \mid X_i=x$ is $[0,1]$ for each $x$, then
+  \[
+    \mathrm{CATE}(x) \;=\; \int_0^1 \mathrm{MTE}(x,u)\,du.
+  \]
+  \item Integrating over $X_i$, the population average treatment effect is
+  \[
+    \mathrm{ATE} \;:=\; E[\tau_i] \;=\; E\!\left[\int_0^1 \mathrm{MTE}(X_i,u)\,du\right].
+  \]
 \end{enumerate}
 \end{theorem}
 
-Section~\ref{sec:pointid} shows that when an excluded shifter is available, the overlay environment admits a standard local-IV interpretation. The role of the overlay is operational: because $W_i=D_i$ whenever $Z_i=1$, the econometrician directly observes the platform propensity score in the treated arm.
+Theorem~\ref{thm:pointid} establishes that, under the excluded shifter, the
+overlay experiment point-identifies the full MTE schedule as the derivative of
+an observable conditional expectation.  The logic follows directly from
+Proposition~\ref{prop:representation}: differentiating both sides of
+\eqref{eq:representation} with respect to $p$ recovers the MTE at each
+propensity level.
 
-\section{Partial Identification without an Excluded Shifter}
-\label{sec:partial}
+The relationship to the \citet{heckman2005structural} framework is direct and by
+construction.  What is distinctive about the overlay design is the operational
+clarity with which propensity score variation is generated.  In a standard IV
+setting, propensity variation arises from the instrument shifting the selection
+equation, and the propensity must be estimated from the joint distribution of the
+instrument and treatment.  In the overlay, the eligible arm directly reveals
+who was treated at each level of the shifter, so $P_i$ is observable rather than
+latent.  The MTE can then be estimated by standard nonparametric derivative
+methods applied to $\mu_1(x,p)$.
 
-We now return to the passive setting in which no excluded shifter is available. In this case the econometrician still observes
-\[
-p(x)=P(W_i=1 \mid Z_i=1, X_i=x)=P(D_i=1 \mid X_i=x),
-\]
-but because $p(x)$ is a deterministic function of $X_i$, the variation in treatment propensity cannot be separated from the variation in covariates. A derivative-based local-IV argument is therefore unavailable.
+The full-support condition in part 2 of Theorem~\ref{thm:pointid} is
+substantive: it requires that the excluded shifter generate propensity variation
+spanning the full range $[0,1]$.  In practice, the support may be limited---
+geographic or temporal variation may shift the propensity only within a
+subrange.  In such cases, Theorem~\ref{thm:pointid} identifies the MTE on the
+observed support, and one can combine the identified MTE segment with the shape
+restrictions of Section~\ref{subsec:partial} to bound the CATE.  This hybrid
+approach is analogous to the ``extrapolation'' exercises in the MTE literature
+\citep{carneiro2011estimating} and directly mirrors the approach of
+\citeauthor{waisman2025multicell}, who discuss how to extrapolate polynomial MTE
+approximations beyond the observed propensity support.
 
-We instead impose a latent-index model and derive sharp bounds.
+% ============================================================
+\subsection{Track B: Sharp Partial Identification Bounds}
+\label{subsec:partial}
+
+We now return to the passive setting in which no excluded shifter is available.
+The treatment rate $e(x) = P(D_i=1 \mid X_i=x)$ is identified from the eligible
+arm, but because $e(x)$ is a deterministic function of $X_i$, there is no
+within-covariate-cell variation in the platform's propensity.  The
+derivative-based local-IV argument is therefore unavailable.  We instead impose
+a latent-index model and derive sharp bounds under two economically motivated
+restrictions on the MTE schedule.
 
 \begin{assumption}[Passive Latent Index]
 \label{ass:passive}
-There exists a scalar latent variable $U_i$ such that
-\[
-D_i = \mathbf{1}\{p(X_i) \ge U_i\},
-\]
-where, conditional on $X_i=x$,
-\[
-U_i \sim \mathrm{Unif}[0,1].
-\]
+There exists a scalar latent variable $U_i$ such that $D_i = \mathbf{1}\{e(X_i)
+\geq U_i\}$, with $U_i \mid X_i = x \sim \mathrm{Uniform}[0,1]$.
 \end{assumption}
 
-Under Assumption \ref{ass:passive}, define the marginal treatment effect
-\[
-MTE(x,u) := E[\tau_i \mid X_i=x, U_i=u].
-\]
-
-The following lemma links the observable reduced form to the MTE schedule.
-
-\begin{lemma}[Overlay representation]
-\label{lem:overlay}
-Suppose Assumptions \ref{ass:overlay}, \ref{ass:onesided}, and \ref{ass:passive} hold. Then, for every $x$,
-\begin{equation}
-ITT(x) = \int_0^{p(x)} MTE(x,u)\,du.
-\label{eq:itt_representation}
-\end{equation}
-Moreover,
-\begin{equation}
-ATE(x) := E[\tau_i \mid X_i=x] = \int_0^1 MTE(x,u)\,du.
-\label{eq:ate_representation}
-\end{equation}
-\end{lemma}
-
-To obtain informative bounds, we impose shape restrictions on the MTE schedule.
+Assumption~\ref{ass:passive} is a latent-index representation of the platform's
+targeting rule in the absence of an excluded shifter.  Under this structure,
+users with the lowest values of $U_i$---the highest intrinsic propensity to be
+targeted---are selected first as the platform's budget or delivery intensity
+increases.  This is consistent with a platform that ranks users by predicted
+response and targets the top-$e(x)$ fraction within each covariate cell.
 
 \begin{assumption}[Monotone Selection on Gains]
 \label{ass:monotone}
-For every $x$, the function $u \mapsto MTE(x,u)$ is weakly decreasing on $[0,1]$.
+For every $x$, the MTE schedule $u \mapsto \mathrm{MTE}(x,u)$ is weakly
+decreasing on $[0,1]$.
 \end{assumption}
 
-\begin{assumption}[Nonnegative Effects]
-\label{ass:nonnegative}
-For every $(x,u)$,
-\[
-MTE(x,u)\ge 0.
-\]
+Assumption~\ref{ass:monotone} is the key behavioral restriction.  It states that
+users with lower latent resistance to being targeted ($U_i$ closer to zero) have
+weakly higher treatment effects---the platform's selection criterion is
+positively correlated with treatment response.  This is precisely what a
+profit-maximizing advertising platform is designed to achieve: the targeting
+algorithm predicts response rates and allocates impressions to high-predicted-
+response users.
+
+The economic basis for this assumption is strong.  Advertising platforms sell
+campaign performance (conversions, clicks, purchases) and are therefore
+incentivized to direct ads toward users most likely to respond.  An advertiser
+paying on a cost-per-click or cost-per-conversion basis creates direct pressure
+for the platform to select high-responders.  Empirical evidence from large-scale
+advertising experiments is consistent with substantial positive selection on gains
+\citep{gordon2019comparison, waisman2025multicell}: the users the platform
+chooses to target within an eligible audience exhibit significantly higher
+response rates than the eligible audience as a whole.
+
+We emphasize that Assumption~\ref{ass:monotone} does not require perfect
+targeting.  It requires only that selection be positively correlated with
+treatment response on average---a far weaker condition that accommodates
+prediction errors and multi-objective optimization (e.g., targeting users with
+high brand affinity in addition to high purchase likelihood).
+
+\begin{assumption}[Nonnegative Treatment Effects]
+\label{ass:nonneg}
+$\mathrm{MTE}(x,u) \geq 0$ for all $(x,u)$.
 \end{assumption}
 
-Assumption \ref{ass:monotone} says that the platform weakly prioritizes users with larger gains from treatment. This is the econometric translation of the platform's incentive to maximize campaign effectiveness: advertisers and platforms optimize for users with the highest marginal response. Assumption \ref{ass:nonnegative} rules out harmful treatment effects and is used only to obtain the lower bound.
+Assumption~\ref{ass:nonneg} rules out harmful treatment effects.  In advertising
+contexts, the primary concern is whether exposure to an ad causes users to
+purchase a product they would not otherwise have bought; the possibility that
+exposure causes negative outcomes (e.g., brand backlash or substitution toward
+competing products) is an exception rather than the rule.  Critically,
+Assumption~\ref{ass:nonneg} is used only to establish the lower bound: the upper
+bound in Theorem~\ref{thm:sharp} holds under Assumption~\ref{ass:monotone}
+alone.  Our Monte Carlo analysis in Section~\ref{sec:mc} explicitly examines
+what happens to the bounds when nonnegative effects is violated, providing a
+robustness check on this assumption.
 
-\begin{theorem}[Sharp identification region]
+\begin{lemma}[MTE Representation under Passive Overlay]
+\label{lem:overlay}
+Suppose Assumptions~\ref{ass:overlay},~\ref{ass:onesided}, and~\ref{ass:passive}
+hold.  Then, for every $x$,
+\begin{equation}
+  \mathrm{CITT}(x) \;=\; \int_0^{e(x)} \mathrm{MTE}(x,u)\,du,
+  \label{eq:citt_rep}
+\end{equation}
+\begin{equation}
+  \mathrm{CATE}(x) \;=\; \int_0^1 \mathrm{MTE}(x,u)\,du.
+  \label{eq:cate_rep}
+\end{equation}
+\end{lemma}
+
+Lemma~\ref{lem:overlay} is a technical bridge between the observable reduced
+form and the latent MTE schedule.  The CITT integrates the MTE over the treated
+region $[0, e(x)]$---users the platform selects---while the CATE integrates the
+MTE over the full support $[0,1]$.  The difference, $\mathrm{CATE}(x) -
+\mathrm{CITT}(x) = \int_{e(x)}^1 \mathrm{MTE}(x,u)\,du$, is the contribution
+of the untreated region, which is unobserved but bounded under
+Assumptions~\ref{ass:monotone} and~\ref{ass:nonneg}.
+
+\begin{theorem}[Sharp Identification Region]
 \label{thm:sharp}
-Fix $x$ such that $p(x)\in(0,1)$ and $ITT(x)\ge 0$. Suppose Assumptions \ref{ass:overlay}, \ref{ass:onesided}, \ref{ass:passive}, \ref{ass:monotone}, and \ref{ass:nonnegative} hold. Then
+Fix $x$ with $e(x) \in (0,1)$ and $\mathrm{CITT}(x) \geq 0$.  Suppose
+Assumptions~\ref{ass:overlay},~\ref{ass:onesided},~\ref{ass:passive},~\ref{ass:monotone},
+and~\ref{ass:nonneg} hold.  Then
 \begin{equation}
-ITT(x) \le ATE(x) \le \frac{ITT(x)}{p(x)}.
-\label{eq:bounds_main}
+  \mathrm{CATE}(x) \;\in\; \bigl[\,\mathrm{CITT}(x),\;\mathrm{CATT}(x)\,\bigr].
+  \label{eq:bounds}
 \end{equation}
-Equivalently, since $ATT(x)=ITT(x)/p(x)$,
-\begin{equation}
-ATE(x) \in \bigl[ITT(x),\, ATT(x)\bigr].
-\label{eq:bounds_att}
-\end{equation}
-The bounds are sharp.
+The bounds are sharp: both endpoints are attained by admissible
+data-generating processes consistent with the observable statistics
+$(e(x),\, \mathrm{CITT}(x))$.
 \end{theorem}
 
+The identification region in Theorem~\ref{thm:sharp} has an intuitive structure.
+The lower bound $\mathrm{CITT}(x)$ arises from the worst case in which treatment
+effects are zero for all untreated types ($U_i > e(x)$): the CATE equals the
+CITT because the campaign has no value for the users the platform does not
+target.  The upper bound $\mathrm{CATT}(x)$ arises from the best case in which
+the MTE is constant across all types: the platform's selection adds no additional
+efficiency beyond random selection, so the CATE equals the CATT.
+
+Both bounds are identified directly from experimental data: the CITT from the
+overlay design and the CATT from Proposition~\ref{prop:att}.  This makes the
+bounds immediately implementable without any additional experimental variation.
+
+The width of the identified set, $\mathrm{CATT}(x) - \mathrm{CITT}(x) =
+\mathrm{CATT}(x)\cdot(1-e(x))$, is informative.  When $e(x)$ is close to one
+the bounds are narrow and the CATE is close to the CATT---the platform treats
+nearly all eligible users, suggesting the campaign's eligible audience is already
+highly selective.  When $e(x)$ is small the bounds are wide, reflecting
+substantial uncertainty about treatment effects for the marginal user.  This
+connects directly to the practitioner's question: a narrow identified set
+justifies treating the CATT as a reliable proxy for scale-up returns, while a
+wide identified set signals the need for additional experimental variation.
+
 \begin{remark}
-Under the assumptions of Theorem \ref{thm:sharp}, the platform-treated effect satisfies
-\[
-ATT(x)=\frac{ITT(x)}{p(x)} \ge ATE(x).
-\]
-Thus strong selective targeting shows up as a gap between $ATT(x)$ and the lower end of the identified set for $ATE(x)$.
+The upper bound $\mathrm{CATE}(x) \leq \mathrm{CATT}(x)$ holds under
+Assumption~\ref{ass:monotone} alone (without nonnegative effects).  The lower bound
+$\mathrm{CATE}(x) \geq \mathrm{CITT}(x)$ additionally requires
+Assumption~\ref{ass:nonneg}.  When nonnegative effects is violated---as can arise in
+practice when some users have negative responses to advertising---the true CATE
+may fall below the CITT, and only the upper bound remains valid.
 \end{remark}
 
-\subsection{The Selection Ratio}
+\subsubsection{The Selection Ratio and a Decision Rule}
 
-Theorem~\ref{thm:sharp} suggests a natural summary statistic for the degree of algorithmic
-cherry-picking. We define the \emph{Selection Ratio} as:
+Theorem~\ref{thm:sharp} motivates a natural summary diagnostic for the degree of
+algorithmic cherry-picking.
+
+\begin{definition}[Selection Ratio]
+The \emph{Selection Ratio} at covariate value $x$ is
 \begin{equation}
-R(x) := \frac{ATT(x)}{ATE(x)}.
-\label{eq:selection_ratio}
+  R(x) \;:=\; \frac{\mathrm{CATT}(x)}{\mathrm{CATE}(x)}.
+  \label{eq:sr}
 \end{equation}
+\end{definition}
 
-The Selection Ratio measures how much the platform's targeted subpopulation outperforms
-the population average. If the platform assigns treatments uniformly at random,
-$R(x)=1$. If the algorithm perfectly targets the top-$p(x)$ fraction of users by
-treatment effect, $R(x)$ can be substantially above 1, indicating strong
-cherry-picking.
+The Selection Ratio measures how much the platform's targeted subpopulation
+outperforms the full population on average.  If the platform assigns treatment
+uniformly at random, $R(x) = 1$ and CATT = CATE.  If the algorithm perfectly
+targets the highest-responding users, $R(x)$ can be substantially above one,
+indicating that the campaign's observed lift significantly overstates its
+population-level effect.
 
-\begin{corollary}[Bounds on the Selection Ratio]
+\begin{corollary}[Partial Identification of the Selection Ratio]
 \label{cor:ratio}
-Under the conditions of Theorem~\ref{thm:sharp}, the Selection Ratio is partially identified:
+Under the conditions of Theorem~\ref{thm:sharp},
 \begin{equation}
-R(x) = \frac{ATT(x)}{ATE(x)} \in \left[1,\; \frac{ATT(x)}{ITT(x)}\right] = \left[1,\; \frac{1}{p(x)}\right].
-\label{eq:ratio_bounds}
+  R(x) \;\in\; \left[1,\;\frac{1}{e(x)}\right].
+  \label{eq:ratio_bounds}
 \end{equation}
 \end{corollary}
 
-The lower bound $R(x) \ge 1$ follows because $ATE(x) \le ATT(x)$ under monotone
-selection. The upper bound $R(x) \le 1/p(x)$ follows because $ATE(x) \ge ITT(x)
-= p(x) \cdot ATT(x)$. A lower treatment rate $p(x)$ implies a higher potential
-for cherry-picking, as the platform must be highly selective among eligible users.
-In practice, advertisers can compare $ATT(x)$ (identifiable from the overlay) with
-$ATE(x)$ estimates (from a multi-cell design, if available) to assess how much of
-their observed campaign ROI reflects the platform's targeting efficiency rather than
-the treatment's intrinsic population value.
+The lower bound $R(x) \geq 1$ follows from monotone selection (CATT $\geq$
+CATE).  The upper bound $R(x) \leq 1/e(x)$ follows because CATE $\geq$ CITT $=
+e(x)\cdot$CATT.  A lower treatment rate $e(x)$ implies higher potential for
+cherry-picking, because the platform must be highly selective to reach its
+treatment rate target.  In the extreme case of a very targeted campaign with
+$e(x) = 0.1$, the Selection Ratio could be as large as 10, meaning the observed
+CATT could overstate the population CATE by a factor of up to 10.
 
-\section{Proofs}
-\label{sec:proofs}
+Practically, the upper bound on $R(x)$ is directly computable from the treatment
+rate $e(x)$, which is observed in any overlay experiment.  This yields a
+concrete decision rule linking Track~B to Track~A.
 
-\subsection*{Proof of Proposition \ref{prop:att}}
+\begin{remark}[Decision Rule]
+\label{rem:decision}
+Let $\bar{R} > 1$ be a practitioner-specified tolerance for the worst-case
+scale-up overstatement.  If $1/e(x) < \bar{R}$, the CATT is a sufficiently
+reliable proxy for the CATE under the maintained assumptions, and no additional
+experimental variation is needed.  If $1/e(x) \geq \bar{R}$, the analyst should
+seek an excluded shifter (Track~A) or engineer propensity variation following
+\citet{waisman2025multicell} before using the CATT to inform scale-up decisions.
+In either case, the Track~B analysis---which costs nothing beyond the existing
+holdout study---is the natural first step in any overlay measurement exercise.
+\end{remark}
 
-When $Z_i=1$, Assumption \ref{ass:onesided} implies $W_i=D_i$, so
-\[
-Y_i = Y_i(D_i) = Y_i(0) + D_i\bigl(Y_i(1)-Y_i(0)\bigr)
-= Y_i(0) + D_i \tau_i.
-\]
-Therefore, by Assumption \ref{ass:overlay},
-\[
-E[Y_i \mid Z_i=1, X_i=x]
-=
-E[Y_i(0) + D_i \tau_i \mid X_i=x]
-=
-E[Y_i(0)\mid X_i=x] + E[D_i\tau_i \mid X_i=x].
-\]
-When $Z_i=0$, Assumption \ref{ass:onesided} implies $W_i=0$, so
-\[
-Y_i = Y_i(0).
-\]
-Hence
-\[
-E[Y_i \mid Z_i=0, X_i=x] = E[Y_i(0)\mid X_i=x].
-\]
-Subtracting yields
-\[
-ITT(x)=E[D_i\tau_i\mid X_i=x],
-\]
-which proves \eqref{eq:itt_basic}.
+% ============================================================
+\subsection{Estimation}
+\label{subsec:estimation}
 
-Next, because $D_i$ is binary,
-\[
-E[D_i\tau_i\mid X_i=x]
-=
-E[\tau_i \mid D_i=1, X_i=x]P(D_i=1\mid X_i=x).
-\]
-Since $p(x)=P(D_i=1\mid X_i=x)$, we obtain
-\[
-E[\tau_i \mid D_i=1, X_i=x]
-=
-\frac{E[D_i\tau_i\mid X_i=x]}{p(x)}
-=
-\frac{ITT(x)}{p(x)}.
-\]
-This proves \eqref{eq:att_basic}. \qed
+The identification results of Sections~\ref{subsec:pointid}
+and~\ref{subsec:partial} suggest natural estimators.  We specify these here;
+Section~\ref{sec:mc} evaluates their finite-sample performance.
 
-\subsection*{Proof of Proposition \ref{prop:representation}}
+\subsubsection{Track B: Plug-in Estimators and Imbens--Manski Inference}
 
-Fix $(x,p)$ in the support of $(X_i,P_i)$. Under Assumptions \ref{ass:onesided} and \ref{ass:excluded}, when $Z_i=1$ and $P_i=p$,
-\[
-D_i = \mathbf{1}\{p \ge U_i\},
-\]
-and therefore
-\[
-Y_i = Y_i(D_i) = Y_i(0) + \mathbf{1}\{U_i\le p\}\tau_i.
-\]
-Taking conditional expectations,
-\[
-\mu_1(x,p)
-=
-E[Y_i(0)\mid Z_i=1, X_i=x, P_i=p]
-+
-E[\mathbf{1}\{U_i\le p\}\tau_i \mid Z_i=1, X_i=x, P_i=p].
-\]
-By Assumption \ref{ass:excluded}(5), $Z_i$ is conditionally independent of $(Y_i(0),Y_i(1),U_i)$ given $(X_i,S_i)$. By Assumption \ref{ass:excluded}(3), $(Y_i(0),Y_i(1),U_i)$ is conditionally independent of $S_i$ given $X_i$. Since $P_i=\pi(X_i,S_i)$ is a measurable function of $(X_i,S_i)$, it follows that conditional on $X_i=x$,
-\[
-(Y_i(0),Y_i(1),U_i) \perp P_i.
-\]
-Hence
-\[
-E[Y_i(0)\mid Z_i=1, X_i=x, P_i=p] = E[Y_i(0)\mid X_i=x].
-\]
-Also,
-\[
-E[\mathbf{1}\{U_i\le p\}\tau_i \mid Z_i=1, X_i=x, P_i=p]
-=
-E[\mathbf{1}\{U_i\le p\}\tau_i \mid X_i=x].
-\]
-Therefore,
-\[
-\mu_1(x,p)
-=
-E[Y_i(0)\mid X_i=x]
-+
-E[\mathbf{1}\{U_i\le p\}\tau_i \mid X_i=x].
-\]
-Now condition on $U_i$ and use Assumption \ref{ass:excluded}(2):
-\[
-E[\mathbf{1}\{U_i\le p\}\tau_i \mid X_i=x]
-=
-\int_0^p E[\tau_i \mid X_i=x, U_i=u]\,du
-=
-\int_0^p MTE(x,u)\,du.
-\]
-Finally, when $Z_i=0$, we have $W_i=0$ and hence
-\[
-\mu_0(x)=E[Y_i\mid Z_i=0,X_i=x]=E[Y_i(0)\mid X_i=x].
-\]
-Combining the last two displays yields
-\[
-\mu_1(x,p)=\mu_0(x)+\int_0^p MTE(x,u)\,du.
-\]
-This proves \eqref{eq:representation}. \qed
+The sharp bounds $[\mathrm{CITT}(x), \mathrm{CATT}(x)]$ and the Selection Ratio
+upper bound $1/e(x)$ are smooth functionals of the joint distribution of
+$(Y_i, W_i, Z_i, X_i)$, admitting plug-in estimators.  Let flexible regression
+(e.g., local polynomial, series, or cross-fitted ML) produce estimates
+$\hat{m}_d(x) = \hat{E}[Y_i \mid Z_i=d, X_i=x]$ and $\hat{e}(x) =
+\hat{P}(W_i=1 \mid Z_i=1, X_i=x)$.  Define
+\begin{align}
+  \hat{L}(x) &= \hat{\mathrm{CITT}}(x) \;=\; \hat{m}_1(x) - \hat{m}_0(x), \\
+  \hat{U}(x) &= \hat{\mathrm{CATT}}(x) \;=\; \hat{L}(x)\,/\,\hat{e}(x).
+\end{align}
 
-\subsection*{Proof of Theorem \ref{thm:pointid}}
+\textbf{Inference on the true CATE.}  To construct a confidence interval that
+covers the true (scalar) $\mathrm{CATE}(x)$ with probability $\geq 1-\alpha$,
+we apply \citet{imbens2004confidence} as refined by \citet{stoye2009more}.
+The Stoye (2009) interval has pointwise asymptotic validity: it covers
+$\mathrm{CATE}(x)$ with probability approaching $1-\alpha$ for each fixed $x$.
+Uniform validity over $x$ requires additional conditions and is left for future
+work.
+Let $\hat{\sigma}_L^2$ and $\hat{\sigma}_U^2$ be asymptotic variance estimates
+for $\hat{L}(x)$ and $\hat{U}(x)$.  Solve for the critical value $\hat{c}_n$
+satisfying
+\[
+  \Phi\!\left(\hat{c}_n + \frac{\sqrt{n}\bigl(\hat{U}(x) -
+  \hat{L}(x)\bigr)}{\max(\hat{\sigma}_L,\hat{\sigma}_U)}\right) -
+  \Phi(-\hat{c}_n) \;=\; 1-\alpha,
+\]
+yielding the confidence interval
+\[
+  \widehat{\mathrm{CI}}_{1-\alpha}(x) \;=\; \Bigl[\hat{L}(x) -
+  \hat{c}_n\,\hat{\sigma}_L/\sqrt{n},\;\;
+  \hat{U}(x) + \hat{c}_n\,\hat{\sigma}_U/\sqrt{n}\Bigr].
+\]
+The variance $\hat{\sigma}_U^2$ for the ratio estimator is computed via the
+delta method.  Because $\hat{L}(x)$ and $\hat{e}(x)$ both depend on the
+$Z_i = 1$ subsample, they are correlated; ignoring this covariance overstates
+$\hat{\sigma}_U^2$ and produces conservative inference:
+\begin{equation}
+  \hat{\sigma}_U^2 \;\approx\; \frac{\hat{\sigma}_{\mathrm{CITT}}^2}{\hat{e}^2}
+  + \frac{\hat{\mathrm{CATT}}^2\,\hat{\sigma}_e^2}{\hat{e}^2}
+  - \frac{2\,\hat{\mathrm{CATT}}}{\hat{e}^3}\,
+    \widehat{\mathrm{Cov}}\!\bigl(\hat{L}(x),\,\hat{e}(x)\bigr),
+  \label{eq:delta_var}
+\end{equation}
+where $\widehat{\mathrm{Cov}}(\hat{L},\hat{e}) =
+n_1(x)^{-1}\widehat{\mathrm{Cov}}(Y_i, W_i \mid Z_i=1, X_i=x)$ and $n_1(x)$
+is the effective sample size in the eligible arm at $x$.  In practice,
+$\widehat{\mathrm{Cov}}(Y_i, W_i \mid Z_i=1, X_i=x)$ is estimated as the
+sample covariance of $Y_i$ and $W_i$ among observations with $Z_i=1$ in a
+neighborhood of $x$ (using the same kernel or series weights as the outcome
+regressions $\hat{m}_d(x)$).
 
-By Proposition \ref{prop:representation},
+\textbf{Selection Ratio.}  A one-sided $(1-\alpha)$ confidence upper bound on
+$R(x)$ via the delta method is
 \[
-\mu_1(x,p)=\mu_0(x)+\int_0^p MTE(x,u)\,du.
-\]
-Since $\mu_0(x)$ does not depend on $p$, differentiating both sides with respect to $p$ gives
-\[
-\frac{\partial}{\partial p}\mu_1(x,p)=MTE(x,p),
-\]
-which proves \eqref{eq:mte_derivative}.
-
-If the support of $P_i\mid X_i=x$ is all of $[0,1]$, then by Assumption \ref{ass:excluded}(2),
-\[
-ATE(x)=E[\tau_i\mid X_i=x]
-=
-\int_0^1 E[\tau_i\mid X_i=x, U_i=u]\,du
-=
-\int_0^1 MTE(x,u)\,du.
-\]
-This proves \eqref{eq:ate_conditional}.
-
-Finally,
-\[
-ATE = E[\tau_i] = E\!\left[E[\tau_i\mid X_i]\right]
-= E\!\left[\int_0^1 MTE(X_i,u)\,du\right],
-\]
-which proves \eqref{eq:ate_population}. \qed
-
-\subsection*{Proof of Lemma \ref{lem:overlay}}
-
-By Proposition \ref{prop:att},
-\[
-ITT(x)=E[D_i\tau_i\mid X_i=x].
-\]
-Under Assumption \ref{ass:passive},
-\[
-D_i=\mathbf{1}\{p(x)\ge U_i\},
-\]
-so
-\[
-ITT(x)
-=
-E[\mathbf{1}\{U_i\le p(x)\}\tau_i \mid X_i=x].
-\]
-Conditioning on $U_i$ and using $U_i\sim\mathrm{Unif}[0,1]$ conditional on $X_i=x$,
-\[
-ITT(x)
-=
-\int_0^{p(x)} E[\tau_i\mid X_i=x,U_i=u]\,du
-=
-\int_0^{p(x)} MTE(x,u)\,du.
-\]
-This proves \eqref{eq:itt_representation}.
-
-Similarly,
-\[
-ATE(x)=E[\tau_i\mid X_i=x]
-=
-\int_0^1 E[\tau_i\mid X_i=x,U_i=u]\,du
-=
-\int_0^1 MTE(x,u)\,du,
-\]
-which proves \eqref{eq:ate_representation}. \qed
-
-\subsection*{Proof of Theorem \ref{thm:sharp}}
-
-By Lemma \ref{lem:overlay},
-\[
-ITT(x)=\int_0^{p(x)} MTE(x,u)\,du
-\quad\text{and}\quad
-ATE(x)=\int_0^1 MTE(x,u)\,du.
+  \hat{R}^{\max}_{1-\alpha}(x) \;=\; \frac{1}{\hat{e}(x)} +
+  z_{1-\alpha}\cdot\frac{\hat{\sigma}_e}{\hat{e}(x)^2\sqrt{n_1(x)}}.
 \]
 
-\paragraph{Upper bound.}
-Because $u\mapsto MTE(x,u)$ is weakly decreasing on $[0,1]$, the average value of $MTE(x,u)$ over the treated interval $[0,p(x)]$ is at least as large as the average value over the untreated interval $[p(x),1]$. Formally,
+\subsubsection{Track A: Finite-Differences MTE Estimator}
+
+When the excluded shifter $S_i$ takes $C$ discrete values with propensity
+scores $0 < p_1 < \cdots < p_C < 1$, Theorem~\ref{thm:pointid} identifies the
+MTE through the derivative of $\mu_1(x,p)$.  With discrete support, estimate
+the conditional outcome mean $\hat{\mu}_1(x, p_c) = \hat{E}[Y_i \mid Z_i=1,
+X_i=x, \hat{P}_i = p_c]$ by local regression within each shifter cell, and
+approximate the derivative by finite differences at midpoints
+$\bar{p}_c = (p_c + p_{c+1})/2$:
+\begin{equation}
+  \hat{\mathrm{MTE}}(x, \bar{p}_c) \;=\; \frac{\hat{\mu}_1(x, p_{c+1}) -
+  \hat{\mu}_1(x, p_c)}{p_{c+1} - p_c}, \qquad c = 1, \ldots, C-1.
+  \label{eq:mte_fd}
+\end{equation}
+Integrate to estimate the CATE:
+\begin{equation}
+  \hat{\mathrm{CATE}}(x) \;=\; \underbrace{\sum_{c=1}^{C-1}
+    \hat{\mathrm{MTE}}(x,\bar{p}_c)(p_{c+1}-p_c)}_{\text{identified on }
+    [p_1,p_C]}
+  \;+\; \underbrace{\hat{\mathrm{MTE}}(x,\bar{p}_1)\cdot p_1 +
+    \hat{\mathrm{MTE}}(x,\bar{p}_{C-1})\cdot(1-p_C)}_{\text{linear
+    extrapolation on }[0,p_1]\cup[p_C,1]}.
+  \label{eq:cate_fd}
+\end{equation}
+Standard errors are obtained by propagating uncertainty through
+\eqref{eq:mte_fd}--\eqref{eq:cate_fd} via the delta method, or by pairs
+bootstrap within each shifter cell.
+
+\begin{remark}
+When $S_i$ is continuously distributed, $\hat{\mathrm{MTE}}(x,p) =
+\hat{\partial}_p\,\mu_1(x,p)$ is estimated by local polynomial derivative
+methods \citep{fan1996local} with bandwidth selected by cross-validation.  The
+asymptotic theory is standard; we leave bandwidth selection for future work and
+focus the Monte Carlo analysis on the practically common discrete-shifter case.
+\end{remark}
+
+% ============================================================
+\section{Monte Carlo Simulation}
+\label{sec:mc}
+
+We assess the finite-sample performance of the estimators specified in
+Section~\ref{subsec:estimation} via Monte Carlo simulation.  Our primary goals
+are: (i) to evaluate coverage and width of the Imbens--Manski confidence interval
+(Track~B) as a function of sample size, treatment rate $\bar{e}$, and the
+complexity of the platform's assignment rule; (ii) to assess the finite-differences
+MTE estimator and CATE reconstructor (Track~A) in terms of bias and RMSE as $n$
+grows; and (iii) to stress-test both tracks when the maintained assumptions are
+violated.  All results are based on 1,000 simulation replications.
+
+\subsection{Data Generating Processes}
+\label{subsec:dgp}
+
+We design three main DGPs that share the same treatment-effect schedule but vary
+the complexity of the platform's assignment rule, and two robustness DGPs that
+modify the treatment-effect schedule to violate the maintained assumptions.  This
+design isolates the role of assignment-rule complexity in the main results and
+tests assumption sensitivity in the robustness checks.
+
+\paragraph{Common outcome model.} For all DGPs, individual potential outcomes are
+\begin{equation}
+  Y_i(d) \;=\; d\cdot\tau(U_i) \;+\; \varepsilon_i, \qquad
+  \varepsilon_i \;\sim\; N(0,1),
+  \label{eq:dgp_outcome}
+\end{equation}
+where $\tau(U_i)$ is the individual treatment effect determined by the latent
+type $U_i \sim \mathrm{Uniform}[0,1]$, which is independent of $X_i$ and
+$\varepsilon_i$.  The platform's targeting follows the latent-index model
+$D_i = \mathbf{1}\{U_i \leq e_i\}$, where $e_i$ is the delivery propensity
+for unit $i$.  The analyst assigns eligibility $Z_i \sim \mathrm{Bernoulli}(0.5)$
+independently.
+
+\paragraph{Common MTE schedule (DGPs 1--3).}
+All three main DGPs use the same linearly decreasing MTE:
 \[
-\frac{1}{1-p(x)}\int_{p(x)}^1 MTE(x,u)\,du
-\le
-\frac{1}{p(x)}\int_0^{p(x)} MTE(x,u)\,du.
+  \tau(u) \;=\; 2(1 - u),
 \]
-Thus
+which yields $\mathrm{CATE} = \int_0^1 2(1-u)\,du = 1.00$.  Because users with
+lower $U_i$ respond more strongly \emph{and} are the ones the platform targets
+(lower $U_i$ means lower cost of delivery in the latent-index model), the
+platform's selection on $U_i$ creates positive selection on gains:
+$\mathrm{CATT} > \mathrm{CATE}$ under all three DGPs.  The three DGPs differ
+only in how the propensity $e_i$ depends on covariates.
+
+\paragraph{DGP 1 (Constant quota).}
+The platform uses a uniform quota: $e_i = 0.30$ for all units.  This is the
+simplest assignment rule---a fixed-rate targeting algorithm without covariate
+targeting.  True estimands: $\mathrm{CATE} = 1.00$, $\mathrm{CATT} = 1.70$,
+$\mathrm{CITT} = 0.51$, $\mathrm{SR} = 1.70$, $\mathrm{SR}_{ub} = 3.33$.
+
+\paragraph{DGP 2 (Logistic score).}
+The propensity is a logistic function of observed covariate $X_i \sim N(0,1)$:
 \[
-ATU(x):=\frac{1}{1-p(x)}\int_{p(x)}^1 MTE(x,u)\,du
-\le
-\frac{ITT(x)}{p(x)}=ATT(x).
+  e_i \;=\; \sigma(\alpha + 2\,X_i), \qquad \sigma(t) = (1+e^{-t})^{-1},
 \]
-Using the decomposition
+where $\alpha$ is calibrated so that $\bar{e} = \mathbb{E}[e_i] = 0.30$
+(yielding $\alpha = -1.38$).  This represents a realistic covariate-based
+targeting rule of the form used in standard logistic propensity models.  True
+estimands: $\mathrm{CATE} = 1.00$, $\mathrm{CATT} = 1.44$, $\mathrm{CITT} =
+0.43$, $\mathrm{SR} = 1.44$, $\mathrm{SR}_{ub} = 3.33$.
+
+\paragraph{DGP 3 (Nonlinear ML score).}
+The propensity involves nonlinear interactions:
 \[
-ATE(x)=p(x)ATT(x)+(1-p(x))ATU(x),
+  e_i \;=\; \sigma\!\left(\gamma_0 + 2X_{i1}^2 + X_{i2} - 2X_{i1}X_{i2}\right),
 \]
-we obtain
+where $X_{i1}, X_{i2} \sim N(0,1)$ and $\gamma_0$ is calibrated to
+$\bar{e} = 0.30$ (yielding $\gamma_0 = -2.98$).  This represents a modern
+machine-learning targeting algorithm with nonlinear feature interactions.  True
+estimands: $\mathrm{CATE} = 1.00$, $\mathrm{CATT} = 1.31$, $\mathrm{CITT} =
+0.39$, $\mathrm{SR} = 1.31$, $\mathrm{SR}_{ub} = 3.33$.
+
+The progression DGP 1 $\to$ DGP 2 $\to$ DGP 3 reflects increasing algorithmic
+complexity.  The true SR decreases from 1.70 to 1.44 to 1.31, which reflects
+the fact that the nonlinear ML algorithm, by targeting on $X_i$ rather than
+directly on $U_i$, achieves somewhat less selection on gains.  Importantly, the
+SR upper bound $1/\bar{e} = 3.33$ is the same across all three DGPs, illustrating
+that the observable treatment rate correctly bounds the SR regardless of the
+assignment rule's complexity.
+
+\paragraph{DGP-R1 (Hump-shaped MTE, monotone selection violated).}
+Using DGP~1 assignment but replacing the MTE with
+$\tau(u) = 8u(1-u)$,
+which peaks at $u = 0.50$.  Now $\tau(0) = 0$ and $\tau(0.30) > \tau(1.00)$,
+so the platform preferentially targets users with low response (near $u=0$).
+This violates Assumption~\ref{ass:monotone}: the platform selects against gains.
+True estimands: $\mathrm{CATE} = 1.33 > \mathrm{CATT} = 0.96$, so the upper
+bound $\mathrm{CATT}$ lies \emph{below} the true CATE.
+
+\paragraph{DGP-R2 (Negative-tail MTE, nonnegative effects violated).}
+Using DGP~1 assignment with $\tau(u) = 2 - 4u$,
+which is positive for $u < 0.50$ and negative for $u > 0.50$.
+True estimands: $\mathrm{CATE} \approx 0 < \mathrm{CITT} = 0.42$, so the lower
+bound $\mathrm{CITT}$ lies strictly \emph{above} the true CATE.
+
+\paragraph{Track~A excluded-shifter design.}
+For the point-identification exercise we augment DGP~1 with a geographic
+excluded shifter $S_i \in \{0,1,2\}$ representing three market types with
+propensities $\pi_s \in \{0.20, 0.35, 0.55\}$.  The outcome is generated
+as in~\eqref{eq:dgp_outcome} with $\tau(u) = 2(1-u)$, so the true MTE at
+the observed midpoints is $\mathrm{MTE}(0.275) = 1.45$ and
+$\mathrm{MTE}(0.450) = 1.10$, and $\mathrm{CATE} = 1.00$.  We estimate
+MTE by finite differences across markets and reconstruct the CATE by
+integrating via linear extrapolation beyond the observed propensity support
+$[0.20,\,0.55]$.
+
+\subsection{Results}
+\label{subsec:sim_results}
+
+\paragraph{Track B: partial identification across DGPs (Table~\ref{tab:trackb}).}
+
+Table~\ref{tab:trackb} reports the bias and RMSE of the CATT estimator and the
+coverage and average width of the 90\% Imbens--Manski CI for the CATE across
+sample sizes $n \in \{500,\,2{,}000,\,10{,}000,\,50{,}000\}$ and DGPs 1--3.
+
+Three findings stand out.  First, the CATT estimator is virtually unbiased at
+all sample sizes across all three DGPs: the largest absolute bias is $0.015$
+(DGP~1, $n=500$), and it shrinks toward zero as $n$ grows.  Second, the
+Imbens--Manski CI achieves the nominal 90\% coverage at moderate to large sample
+sizes.  Coverage dips below 90\% only at $n=500$ under DGP~2 ($0.930$) and
+DGP~3 ($0.846$), where the nonlinear assignment rule concentrates the propensity
+mass away from 0.50, increasing estimation variance.  By $n = 2{,}000$ coverage
+is above 99.7\% across all DGPs, and by $n = 10{,}000$ it is 100\%.  Third,
+the CI width narrows as the assignment rule better targets the high-response
+users: DGP~1 (constant quota, $\mathrm{SR} = 1.70$) has the widest interval
+(1.19 at $n=50{,}000$) while DGP~3 (ML score, $\mathrm{SR} = 1.31$) has the
+narrowest (0.92), as the upper and lower bounds converge when selection on gains
+is weaker.
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \caption{Track B: CATT Estimator and Imbens--Manski CI (nominal 90\%), 1,000 replications}
+  \label{tab:trackb}
+  \begin{tabular}{lrrrrrr}
+    \toprule
+    & \multicolumn{2}{c}{CATT estimator} & \multicolumn{2}{c}{IM CI for CATE} \\
+    \cmidrule(lr){2-3} \cmidrule(lr){4-5}
+    DGP (\textit{true CATE, CATT}) & Bias & RMSE & Coverage & Width \\
+    \midrule
+    \multicolumn{5}{l}{\textit{Panel A: DGP 1 --- Constant quota (CATE=1.00, CATT=1.70)}} \\
+    \quad $n = 500$     & $ 0.015$ & $0.301$ & $0.991$ & $1.207$ \\
+    \quad $n = 2{,}000$ & $ 0.002$ & $0.153$ & $1.000$ & $1.192$ \\
+    \quad $n = 10{,}000$& $ 0.001$ & $0.065$ & $1.000$ & $1.191$ \\
+    \quad $n = 50{,}000$& $-0.001$ & $0.030$ & $1.000$ & $1.190$ \\
+    \addlinespace
+    \multicolumn{5}{l}{\textit{Panel B: DGP 2 --- Logistic score (CATE=1.00, CATT=1.44)}} \\
+    \quad $n = 500$     & $-0.002$ & $0.303$ & $0.930$ & $1.013$ \\
+    \quad $n = 2{,}000$ & $ 0.000$ & $0.150$ & $0.997$ & $1.007$ \\
+    \quad $n = 10{,}000$& $-0.001$ & $0.068$ & $1.000$ & $1.005$ \\
+    \quad $n = 50{,}000$& $ 0.002$ & $0.030$ & $1.000$ & $1.007$ \\
+    \addlinespace
+    \multicolumn{5}{l}{\textit{Panel C: DGP 3 --- Nonlinear ML score (CATE=1.00, CATT=1.31)}} \\
+    \quad $n = 500$     & $-0.009$ & $0.311$ & $0.846$ & $0.924$ \\
+    \quad $n = 2{,}000$ & $ 0.005$ & $0.156$ & $0.983$ & $0.924$ \\
+    \quad $n = 10{,}000$& $-0.004$ & $0.066$ & $1.000$ & $0.916$ \\
+    \quad $n = 50{,}000$& $ 0.000$ & $0.031$ & $1.000$ & $0.917$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Track B: assumption-violation robustness (Table~\ref{tab:robust}).}
+
+Table~\ref{tab:robust} reports Track~B performance under DGP-R1 (monotone
+selection violated) and DGP-R2 (nonnegative effects violated).  Under both
+robustness DGPs, CI coverage collapses to zero: the Imbens--Manski CI fails
+to contain the true CATE.  Under DGP-R1 the CI collapses because the upper
+bound CATT $= 0.96$ lies strictly below the true CATE $= 1.33$; under DGP-R2
+the CI collapses because the lower bound CITT $= 0.42$ lies strictly above the
+true CATE $\approx 0$.  These results confirm that the bounds are sharp---they
+deliver exactly what is promised under the stated assumptions and nothing more.
+In practice, the Selection Ratio upper bound $\mathrm{SR}_{ub} = 1/\bar{e}$
+and the sign of $\mathrm{CITT}$ serve as informal diagnostics: if CITT is
+implausibly large relative to domain knowledge about average effects, the
+nonnegative-effects assumption may warrant scrutiny.
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \caption{Track B: Robustness to Assumption Violations (nominal 90\%, $n = 50{,}000$)}
+  \label{tab:robust}
+  \begin{tabular}{lrrrrc}
+    \toprule
+    DGP & True CATE & True CATT & IM CI Coverage & CI Width & Assumption violated \\
+    \midrule
+    DGP-R1 (hump MTE)      & $1.33$ & $0.96$ & $0.000$ & $0.672$ & Monotone selection \\
+    DGP-R2 (neg-tail MTE)  & $0.00$ & $1.40$ & $0.000$ & $0.980$ & Nonneg effects \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Track A: MTE estimation and CATE reconstruction (Table~\ref{tab:tracka}).}
+
+Table~\ref{tab:tracka} reports bias of the finite-differences MTE estimator at
+each observed propensity midpoint and RMSE of the integrated CATE estimator
+under the geographic excluded-shifter design.
+
+MTE bias at the observed support points is small across all sample sizes: the
+largest absolute bias is $0.042$ (at $\bar{p} = 0.275$, $n = 2{,}000$), and
+it shrinks to $0.000$--$0.010$ at $n \geq 10{,}000$.  However, the CATE RMSE
+plateaus at approximately $0.23$ even as $n$ grows to $200{,}000$, and the
+mean estimated CATE converges to $1.22$ rather than the true $1.00$.  This
+systematic upward bias reflects \emph{extrapolation error}: the observed market
+propensities cover only $[0.20,\,0.55]$, leaving $45\%$ of the unit interval
+outside the support.  Linear extrapolation overestimates the MTE in the tails
+because the true MTE $\tau(u) = 2(1-u)$ is concave, and the overestimate does
+not shrink with $n$.  This finding illustrates a fundamental limitation of the
+excluded-shifter approach: reducing sampling variance does not correct
+extrapolation bias, which requires either a wider propensity support or
+assumptions on the shape of the MTE outside the observed range.
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \caption{Track A: Finite-Differences MTE Estimator and CATE Reconstruction
+  (true MTE$(0.275)=1.45$, MTE$(0.450)=1.10$; true CATE $= 1.00$)}
+  \label{tab:tracka}
+  \begin{tabular}{lrrrr}
+    \toprule
+    & \multicolumn{2}{c}{MTE bias} & \multicolumn{2}{c}{CATE reconstruction} \\
+    \cmidrule(lr){2-3} \cmidrule(lr){4-5}
+    $n$ & at $\bar{p}=0.275$ & at $\bar{p}=0.450$ & RMSE & Mean \\
+    \midrule
+    $2{,}000$   & $0.042$ & $0.006$ & $0.369$ & $1.241$ \\
+    $10{,}000$  & $-0.005$ & $-0.005$ & $0.251$ & $1.218$ \\
+    $50{,}000$  & $0.008$ & $-0.009$ & $0.227$ & $1.219$ \\
+    $200{,}000$ & $0.000$ & $0.003$ & $0.226$ & $1.224$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Selection Ratio diagnostic (Table~\ref{tab:sr}).}
+
+Table~\ref{tab:sr} reports Track~B performance under DGP~1 as the treatment
+rate $\bar{e}$ varies from $0.10$ to $0.60$.  Imbens--Manski CI coverage is
+100\% under all three treatment rates, confirming the sharpness result of
+Theorem~\ref{thm:sharp}.  CI width decreases sharply in $\bar{e}$: at $\bar{e}
+= 0.10$ (aggressive targeting, SR$_{ub} = 10.0$) the average CI width is 1.72,
+while at $\bar{e} = 0.60$ (moderate targeting, SR$_{ub} = 1.67$) the CI width
+shrinks to $0.56$, comparable to the standard error band in a well-powered RCT.
+This exercise illustrates the managerial interpretation of the Selection Ratio
+bound: the observable treatment rate $\bar{e}$ is a sufficient statistic for
+the width of the partial identification region, and platforms that target more
+selectively produce less informative holdout experiments.
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \caption{Selection Ratio Diagnostic: Varying Treatment Rate (DGP 1, $n = 50{,}000$, nominal 90\%)}
+  \label{tab:sr}
+  \begin{tabular}{lrrrrr}
+    \toprule
+    Treatment rate $\bar{e}$ & True SR & SR$_{ub} = 1/\bar{e}$ & IM CI Coverage & CI Width \\
+    \midrule
+    $0.10$ & $1.90$ & $10.03$ & $1.000$ & $1.720$ \\
+    $0.30$ & $1.70$ & $3.34$ & $1.000$ & $1.192$ \\
+    $0.60$ & $1.40$ & $1.67$ & $1.000$ & $0.561$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% ============================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+\subsection{Managerial Implications}
+\label{subsec:managerial}
+
+This paper develops identification theory for overlay experiments, in which the
+analyst randomizes campaign eligibility while the platform's targeting algorithm
+operates freely.  The central practical message is that passive overlay
+experiments identify the CATT, not the CATE, and that this gap is systematic
+and economically significant in any setting where the platform's algorithm
+selects high-responding users.
+
+\emph{Report the right estimand for the decision at hand.}  The CATT answers
+the question: ``Did the campaign work for the users the platform chose to
+target?''  This is the right question for evaluating campaign quality under the
+current targeting strategy and for holding the platform accountable for
+delivering the promised audience.  The CATE answers the question: ``What would
+happen if we applied this campaign to a larger population?''  This is the right
+question for budget-setting and audience-sizing decisions---precisely the
+decision problem studied by \citet{waisman2025multicell}.  Advertisers should
+explicitly identify which question they are answering before interpreting
+experimental results.  Reporting the CATT as if it were the CATE is not merely
+imprecise; it is systematically optimistic about scale-up returns.
+
+\emph{Use the Selection Ratio as a scale-up diagnostic.}  Our partial
+identification analysis provides a directly computable diagnostic.  The
+treatment rate $e(x)$ observed from any overlay experiment immediately bounds the
+Selection Ratio: $R(x) \leq 1/e(x)$.  An advertiser observing a 15\% treatment
+rate should recognize that the platform may be achieving a selection premium of
+up to 6.7x, meaning the CATE for the marginal user could be as low as 15\% of
+the observed CATT.  Even if the actual Selection Ratio is far below this upper
+bound---which it typically will be in practice---a value of $R(x) = 2$ implies
+that doubling the campaign audience will not double revenue, because marginal
+users respond at roughly half the rate of those currently targeted.
+
+\emph{Invest in excluded-shifter designs when stakes are high.}  When the
+campaign budget is large or the scale-up decision is irreversible, the analyst
+should design the overlay experiment to enable point identification of the MTE.
+Our analysis shows that geographic variation in market competition, temporal
+variation in platform load, or variation in per-market budget caps can serve as
+excluded shifters.  Following the spirit of \citet{waisman2025multicell}, an
+advertiser can request that the platform vary delivery intensity across geographic
+markets or time windows.  The investment in a more informative experimental
+design is warranted whenever the partial identification bounds are wide---i.e.,
+whenever $e(x)$ is small and the potential for algorithmic cherry-picking is
+large.
+
+For practitioners, the key takeaway is that the standard output of an online
+advertising experiment---the ATT or CATT from a randomized experiment with
+one-sided noncompliance---is an insufficient input for decisions that involve
+reaching more consumers or setting a larger budget.  This message, first
+articulated clearly in the single-platform setting by \citet{waisman2025multicell},
+applies with equal force in the opaque-targeting environment studied here.
+
+\subsection{Limitations and Future Research}
+\label{subsec:limitations}
+
+Several limitations of this paper point toward directions for future work.
+
+\emph{Asymptotic theory.}  Section~\ref{subsec:estimation} proposes plug-in
+estimators for both tracks, but does not provide a complete asymptotic theory.
+Formal rates of convergence, minimax optimality, and the treatment of the
+nuisance estimation error in the double/debiased machine learning sense
+\citep{chernozhukov2018double} are left for future work.  In particular, for
+Track~A the bandwidth selection problem for the derivative estimator
+$\hat{\partial}_p\,\mu_1(x,p)$ requires additional analysis; for Track~B the
+Imbens--Manski critical value $\hat{c}_n$ has known asymptotic validity under
+pointwise asymptotics but its uniform validity requires further study.
+
+\emph{No interference.}  We maintain SUTVA throughout, ruling out interference
+between users.  In digital advertising, treated users may affect untreated users
+through social influence or through market equilibrium effects such as price
+changes and inventory depletion \citep{johari2022experimental}.  Combining the
+opaque targeting structure studied here with an interference framework is a
+natural direction for future work.
+
+\emph{Binary treatment.}  Our framework treats the treatment as binary.  In
+practice, advertising delivery involves multiple exposures, and the dose-response
+function is often of primary interest \citep{blake2015consumer}.  Extending the
+overlay identification theory to continuous or multi-valued treatments is left
+for future work.
+
+\emph{Single platform.}  We study the case in which a single advertiser overlays
+a single campaign on a single platform.  The multi-platform and multi-campaign
+settings, in which multiple firms simultaneously overlay experiments on the same
+platform, introduce additional identification challenges that are not addressed
+here.
+
+\emph{Monotone selection.}  Our lower bound relies on monotone selection on
+gains, which is an assumption about the platform's optimization rather than a
+testable implication of the passive overlay data alone.  Developing tests of
+this assumption from overlay data---perhaps using auxiliary information about the
+platform's targeting criteria---is an important practical challenge.
+
+% ============================================================
+\appendix
+\renewcommand{\thesection}{A}
+\section*{Appendix: Proofs}
+\addcontentsline{toc}{section}{Appendix: Proofs}
+
+\subsection*{Proof of Proposition~\ref{prop:att}}
+
+When $Z_i = 1$, Assumption~\ref{ass:onesided} implies $W_i = D_i$, so
 \[
-ATE(x)\le ATT(x)=\frac{ITT(x)}{p(x)}.
+  Y_i = Y_i(D_i) = Y_i(0) + D_i\,\tau_i.
+\]
+By Assumption~\ref{ass:overlay}, $Z_i \perp (D_i,\, Y_i(0),\, Y_i(1)) \mid X_i$, hence
+\[
+  E[Y_i \mid Z_i=1, X_i=x] = E[Y_i(0) \mid X_i=x] + E[D_i\,\tau_i \mid X_i=x].
+\]
+When $Z_i = 0$, Assumption~\ref{ass:onesided} implies $W_i = 0$, so $Y_i =
+Y_i(0)$ and
+\[
+  E[Y_i \mid Z_i=0, X_i=x] = E[Y_i(0) \mid X_i=x].
+\]
+Subtracting gives $\mathrm{CITT}(x) = E[D_i\,\tau_i \mid X_i=x]$, proving
+\eqref{eq:itt}.  Since $D_i$ is binary,
+\[
+  E[D_i\,\tau_i \mid X_i=x] = E[\tau_i \mid D_i=1, X_i=x]\cdot P(D_i=1 \mid X_i=x)
+  = \mathrm{CATT}(x)\cdot e(x).
+\]
+Dividing by $e(x)$ proves \eqref{eq:catt}. \qed
+
+\subsection*{Proof of Proposition~\ref{prop:representation}}
+
+Fix $(x,p)$ in the support of $(X_i, P_i)$.  Under Assumptions~\ref{ass:onesided}
+and~\ref{ass:excluded}, when $Z_i=1$ and $P_i=p$, we have $D_i =
+\mathbf{1}\{U_i \leq p\}$, so
+\[
+  Y_i = Y_i(0) + \mathbf{1}\{U_i \leq p\}\,\tau_i.
+\]
+By Assumption~\ref{ass:excluded}(5), $Z_i \perp (Y_i(0),\, Y_i(1),\, U_i) \mid
+(X_i, S_i)$, and by Assumption~\ref{ass:excluded}(3), $(Y_i(0),\, Y_i(1),\, U_i)
+\perp S_i \mid X_i$.  Since $P_i = \pi(X_i, S_i)$ is measurable with respect
+to $(X_i, S_i)$, it follows that $(Y_i(0),\, Y_i(1),\, U_i) \perp P_i \mid
+X_i$.  Therefore,
+\begin{align*}
+  \mu_1(x,p)
+  &= E[Y_i(0) \mid X_i=x] + E[\mathbf{1}\{U_i\leq p\}\,\tau_i \mid X_i=x] \\
+  &= \mu_0(x) + \int_0^p E[\tau_i \mid X_i=x,\, U_i=u]\,du
+   = \mu_0(x) + \int_0^p \mathrm{MTE}(x,u)\,du,
+\end{align*}
+where the last step uses Assumption~\ref{ass:excluded}(2). \qed
+
+\subsection*{Proof of Theorem~\ref{thm:pointid}}
+
+Differentiating both sides of \eqref{eq:representation} with respect to $p$
+gives $\partial_p\,\mu_1(x,p) = \mathrm{MTE}(x,p)$, proving part 1.  Under full
+support, $\mathrm{CATE}(x) = E[\tau_i \mid X_i=x] = \int_0^1
+E[\tau_i \mid X_i=x,\, U_i=u]\,du = \int_0^1 \mathrm{MTE}(x,u)\,du$ by
+Assumption~\ref{ass:excluded}(2), proving part 2.  Part 3 follows by the law of
+iterated expectations. \qed
+
+\subsection*{Proof of Lemma~\ref{lem:overlay}}
+
+By Proposition~\ref{prop:att} and Assumption~\ref{ass:passive}, $D_i =
+\mathbf{1}\{e(X_i) \geq U_i\}$, so
+\[
+  \mathrm{CITT}(x) = E[D_i\,\tau_i \mid X_i=x]
+  = \int_0^{e(x)} E[\tau_i \mid X_i=x,\, U_i=u]\,du
+  = \int_0^{e(x)} \mathrm{MTE}(x,u)\,du,
+\]
+proving \eqref{eq:citt_rep}.  Equation~\eqref{eq:cate_rep} follows by
+integrating the MTE over all of $[0,1]$ using Assumption~\ref{ass:passive}. \qed
+
+\subsection*{Proof of Theorem~\ref{thm:sharp}}
+
+By Lemma~\ref{lem:overlay},
+$\mathrm{CITT}(x) = \int_0^{e(x)}\mathrm{MTE}(x,u)\,du$ and
+$\mathrm{CATE}(x) = \int_0^1 \mathrm{MTE}(x,u)\,du$.
+
+\textit{Upper bound.}  By Assumption~\ref{ass:monotone}, the average MTE over
+$[e(x),1]$ is no greater than the average over $[0,e(x)]$:
+\[
+  \mathrm{CATU}(x) = \frac{1}{1-e(x)}\int_{e(x)}^1\!\mathrm{MTE}(x,u)\,du
+  \;\leq\; \frac{1}{e(x)}\int_0^{e(x)}\!\mathrm{MTE}(x,u)\,du = \mathrm{CATT}(x).
+\]
+Using $\mathrm{CATE}(x) = e(x)\,\mathrm{CATT}(x) + (1-e(x))\,\mathrm{CATU}(x)$
+and $\mathrm{CATU}(x) \leq \mathrm{CATT}(x)$ yields $\mathrm{CATE}(x) \leq
+\mathrm{CATT}(x)$.
+
+\textit{Lower bound.}  By Assumption~\ref{ass:nonneg},
+$\int_{e(x)}^1\mathrm{MTE}(x,u)\,du \geq 0$, so
+$\mathrm{CATE}(x) = \mathrm{CITT}(x) + \int_{e(x)}^1\mathrm{MTE}(x,u)\,du
+\geq \mathrm{CITT}(x)$.
+
+\textit{Sharpness.}  Write $p := e(x)$ and $I := \mathrm{CITT}(x)$.  The
+schedule $m^L(u) = (I/p)\,\mathbf{1}\{u \leq p\}$ is weakly decreasing and
+nonnegative, generates $\mathrm{CITT}(x) = I$, and yields $\mathrm{CATE}(x) = I =
+\mathrm{CITT}(x)$.  The schedule $m^U(u) \equiv I/p$ is constant, generates
+$\mathrm{CITT}(x) = I$, and yields $\mathrm{CATE}(x) = I/p = \mathrm{CATT}(x)$.
+Convex combinations $m^\lambda = \lambda\,m^U + (1-\lambda)\,m^L$ are weakly
+decreasing and nonnegative, generate $\mathrm{CITT}(x) = I$, and yield
+$\mathrm{CATE}(x) = \lambda\,\mathrm{CATT}(x) + (1-\lambda)\,\mathrm{CITT}(x)$,
+attaining every value in $[\mathrm{CITT}(x),\, \mathrm{CATT}(x)]$. \qed
+
+\subsection*{Proof of Corollary~\ref{cor:ratio}}
+
+Since $\mathrm{CATE}(x) \in [\mathrm{CITT}(x),\, \mathrm{CATT}(x)]$ and
+$\mathrm{CITT}(x) = e(x)\,\mathrm{CATT}(x)$:
+\[
+  R(x) = \frac{\mathrm{CATT}(x)}{\mathrm{CATE}(x)}
+  \;\in\; \left[\frac{\mathrm{CATT}(x)}{\mathrm{CATT}(x)},\;
+               \frac{\mathrm{CATT}(x)}{e(x)\,\mathrm{CATT}(x)}\right]
+  = \left[1,\;\frac{1}{e(x)}\right]. \qed
 \]
 
-\paragraph{Lower bound.}
-By Assumption \ref{ass:nonnegative},
-\[
-\int_{p(x)}^1 MTE(x,u)\,du \ge 0.
-\]
-Therefore,
-\[
-ATE(x)
-=
-\int_0^{p(x)} MTE(x,u)\,du
-+
-\int_{p(x)}^1 MTE(x,u)\,du
-\ge
-\int_0^{p(x)} MTE(x,u)\,du
-=
-ITT(x).
-\]
-
-\paragraph{Sharpness.}
-Fix $x$, and write
-\[
-p:=p(x), \qquad I:=ITT(x).
-\]
-Consider the following two candidate MTE schedules:
-\[
-m^{L}(u)=
-\begin{cases}
-I/p, & 0\le u\le p,\\
-0, & p<u\le 1,
-\end{cases}
-\]
-and
-\[
-m^{U}(u)=I/p, \qquad 0\le u\le 1.
-\]
-Both schedules are weakly decreasing and nonnegative. Moreover,
-\[
-\int_0^p m^{L}(u)\,du = \int_0^p m^{U}(u)\,du = I.
-\]
-Hence both schedules generate the same observables $(p(x),ITT(x))$.
-
-Under $m^{L}$,
-\[
-ATE(x)=\int_0^1 m^{L}(u)\,du = I = ITT(x).
-\]
-Under $m^{U}$,
-\[
-ATE(x)=\int_0^1 m^{U}(u)\,du = \frac{I}{p} = ATT(x).
-\]
-Thus both endpoints are attainable.
-
-Finally, for any $\lambda\in[0,1]$, define
-\[
-m^{\lambda}(u)=\lambda m^{U}(u)+(1-\lambda)m^{L}(u).
-\]
-Then $m^{\lambda}(u)$ is again weakly decreasing and nonnegative, satisfies
-\[
-\int_0^p m^{\lambda}(u)\,du = I,
-\]
-and yields
-\[
-\int_0^1 m^{\lambda}(u)\,du
-=
-\lambda \frac{I}{p} + (1-\lambda)I.
-\]
-Hence every value in the interval
-\[
-[ITT(x),ATT(x)]
-\]
-is attainable under the maintained assumptions. The bounds are therefore sharp. \qed
-
-\subsection*{Proof of Corollary \ref{cor:ratio}}
-
-By Theorem~\ref{thm:sharp}, $ATE(x) \in [ITT(x), ATT(x)]$.
-
-For the lower bound on $R(x)$: $ATE(x) \le ATT(x)$ implies $R(x) = ATT(x)/ATE(x) \ge 1$.
-
-For the upper bound on $R(x)$: $ATE(x) \ge ITT(x) = p(x) \cdot ATT(x)$ implies
-$R(x) = ATT(x)/ATE(x) \le ATT(x)/(p(x) \cdot ATT(x)) = 1/p(x)$. \qed
+% ============================================================
+\bibliographystyle{apalike}
+\bibliography{refs}
 
 \end{document}

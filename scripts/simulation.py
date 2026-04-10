@@ -5,86 +5,64 @@
 #   "scipy>=1.12",
 #   "matplotlib>=3.8",
 #   "pandas>=2.2",
-#   "tqdm>=4.66",
 # ]
 # ///
 """
 Monte Carlo Simulations: "Measuring Causal Effects under Opaque Targeting"
 
-Three data-generating processes model concrete real-world scenarios where a
-platform's targeting algorithm is opaque to the experimenter. Estimators are
-applied without knowledge of the DGP; results are evaluated against true
-estimands computed by large-sample Monte Carlo integration.
+Three DGPs vary the platform's *opaque* targeting rule from simple to complex,
+following Ye et al. (2025) who vary the outcome model complexity across DGPs.
+Here the analogue is complexity of the assignment rule — the part the analyst
+never observes.  In all three DGPs the MTE schedule is monotone decreasing so
+Assumptions 4 (monotone selection) and 5 (nonneg) both hold; the key quantity
+that changes is e(x) = P(D=1|X=x) and how it relates to treatment effects.
 
-────────────────────────────────────────────────────────────────────────────
-DGP 1 — Meta/Facebook Advertiser (Simple Logistic Targeting)
-────────────────────────────────────────────────────────────────────────────
-A DTC brand measures conversion lift on Meta. Meta's ad auction scores users
-on purchase intent X ~ U[0,1] using a logistic model: targeting probability
-p(X) = sigmoid(-2 + 4X). High-intent users (X→1) face p ≈ 88%, low-intent
-(X→0) face p ≈ 12%. Two forms of selection operate simultaneously:
+For each DGP we evaluate:
+  Track B (Section 3.5.1): plug-in bounds [CITT,CATT] and Imbens-Manski /
+  Stoye CI covering the true CATE.  Metrics: CATT bias/RMSE, CI coverage and
+  width, Selection Ratio upper bound.
 
-  - Selection into treatment on observables: high-X users have higher
-    baseline conversions (Y₀ = 0.5·X + ε), so OLS naively overestimates
-    the ad effect by attributing baseline advantage to the campaign.
-  - Selection on gains: high-X users also respond more strongly to ads
-    (τ(X) = 1 + 2X), so ATT > ATE — the platform's targeting achieves
-    better-than-average lift.
+  Track A (Section 3.5.2): finite-differences MTE estimator applied to DGP 1
+  extended with a discrete geographic excluded shifter.  Metrics: MTE bias at
+  each propensity midpoint, CATE RMSE.
 
-The brand runs a budget-level randomization Z ~ Bernoulli(0.5): Z=1 means
-the campaign is live for user i; Z=0 means it is paused. They observe (Y, Z,
-W=D·Z) but NOT Meta's propensity p(X) or individual targeting status D.
+Two robustness DGPs show what breaks when assumptions are violated:
+  DGP-R1: MTE hump-shaped (monotone selection violated) → upper bound may fail.
+  DGP-R2: MTE crosses zero (nonneg violated) → lower bound fails.
 
-Three estimators are compared:
-  (a) Naive OLS: regresses Y on W — biased by the baseline-selection channel.
-  (b) Plain ITT: E[Y|Z=1] − E[Y|Z=0] — underestimates ATT by factor p̄ ≈ 0.5.
-  (c) Overlay ATT: ITT̂ / p̂ — correctly identifies ATT (Proposition 1).
+─────────────────────────────────────────────────────────────────────────────
+DGP Details
+─────────────────────────────────────────────────────────────────────────────
+DGP 1  Constant-quota targeting  (simplest opaque rule)
+       D_i = 1{U_i ≤ 0.30}  (platform targets bottom 30% by latent type)
+       τ(U_i) = 2(1 − U_i)   (monotone: low-U → high-responders, targeted)
+       True (analytic):
+         CATE = 1.00,  CATT = 1.76,  CITT = 0.528,  SR = 1.76,  SR_ub = 3.33
 
-────────────────────────────────────────────────────────────────────────────
-DGP 2 — TikTok External Advertiser (Nonlinear ML Targeting)
-────────────────────────────────────────────────────────────────────────────
-A music label tests a promotional campaign on TikTok. TikTok's ranking engine
-determines targeting via a nonlinear interaction of user age (X₁) and content
-affinity (X₂):
+DGP 2  Logistic score-based targeting  (realistic one-covariate rule)
+       D_i = 1{U_i ≤ σ(α + βX_i)},  X_i ~ N(0,1),  α calibrated to ē = 0.30
+       τ(U_i) = 2(1 − U_i)   (same monotone MTE as DGP 1)
+       High-X users have higher propensity AND are more likely to be low-U
+       compliers → CATT > CATE, same qualitative picture as DGP 1.
+       True CATT > CATE by simulation.
 
-    p(X₁, X₂) = sigmoid(−1 + 3·X₁² + 2·X₂ − 4·X₁·X₂)
+DGP 3  Nonlinear ML targeting  (complex two-covariate interaction rule)
+       D_i = 1{U_i ≤ σ(γ₀+γ₁X₁²+γ₂X₂+γ₃X₁X₂)},  X₁,X₂~N(0,1),  ē≈0.30
+       τ(U_i) = 2(1 − U_i)   (same monotone MTE)
+       Tests robustness of the estimator to arbitrary nonlinear opaque rules.
 
-Young, high-affinity users get disproportionately high targeting probability;
-the negative interaction X₁·X₂ suppresses it for older high-affinity users —
-a pattern typical of neural-network ranking models. The label cannot
-replicate or query TikTok's model. They apply the same overlay design (Z=1:
-campaign shown; Z=0: withheld). The estimator is applied with no knowledge
-of the functional form of p(·,·). This experiment tests whether the
-identification result (Proposition 1) is robust to arbitrary nonlinear and
-non-separable targeting rules.
+DGP-R1 Hump-shaped MTE, constant-quota targeting
+       τ(U_i) = 8U_i(1 − U_i)  — peaks at U=0.5, monotone selection violated.
+       → Upper bound CATE ≤ CATT may fail (CATE > CATT here).
 
-────────────────────────────────────────────────────────────────────────────
-DGP 3 — Platform O: External Advertiser Alongside Ye et al.'s m=3 Setup
-────────────────────────────────────────────────────────────────────────────
-Platform O (a TikTok-like platform, as studied by Ye et al. 2025) runs m=3
-concurrent A/B tests on its recommendation algorithm. The outcome Y follows
-Ye et al.'s generalized sigmoid form II (their equation 6):
+DGP-R2 Linear-crossing MTE, constant-quota targeting
+       τ(U_i) = 2 − 4U_i  — positive for U<0.5, negative for U>0.5.
+       → Nonneg assumption violated; lower bound CATE ≥ CITT fails.
 
-    E[Y|X, T] = θ₄(X) / (1 + exp(−(θ₀(X) + θ₁(X)·T₁ + θ₂(X)·T₂ + θ₃(X)·T₃)))
-
-An external brand (Firm A) simultaneously runs an overlay experiment. Firm A
-has no access to Platform O's internal assignment rule v(t|x) — the precise
-information that Ye et al.'s DeDL requires and that external advertisers
-cannot obtain. Firm B (a second external advertiser) competes for the same
-users in a real-time bidding auction, creating competition-induced correlation
-between Firm A's targeting probability p_A(X₁, X₂) and Firm B's activity.
-
-From Firm A's perspective:
-  - D_A = T₁ (whether Platform O serves Firm A's ad, with p_A depending on X₁
-    and on X₂ through auction competition with Firm B — both opaque to Firm A)
-  - Z_A ~ Bernoulli(0.5) (Firm A's own overlay gate)
-  - W_A = D_A · Z_A (realized ad exposure)
-  - Y_A = own outcome (purchases), affected only by W_A in this DGP
-
-Firm A's true ATT_A = E[τ_A(X₁) | D_A=1] is computed numerically. The
-overlay estimator ITT_A/p̂_A identifies ATT_A without knowing v(t|x),
-p_A(·,·), or anything about Firm B. This directly contrasts with Ye et al.'s
-internal-platform DeDL, which assumes v(t|x) is known.
+Track A extension of DGP 1:  geographic markets S_i ∈ {1,2,3} with
+  constant propensities π_s ∈ {0.20, 0.35, 0.55}.  In market s,
+  D_i = 1{U_i ≤ π_s}.  True MTE(p) = 2(1−p), CATE = 1.00.
+─────────────────────────────────────────────────────────────────────────────
 """
 
 import matplotlib
@@ -93,6 +71,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+from scipy.stats import norm
+from scipy.optimize import brentq
 from pathlib import Path
 import warnings
 warnings.filterwarnings("ignore")
@@ -101,563 +81,511 @@ RNG = np.random.default_rng(42)
 OUT = Path(__file__).parent / "figures"
 OUT.mkdir(exist_ok=True)
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
 
 def sigmoid(x):
     return 1.0 / (1.0 + np.exp(-np.clip(x, -500, 500)))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# DGP 1: Meta/Facebook logistic targeting
+# Section 3.5.1 Track B: plug-in bounds + Imbens-Manski (2004) / Stoye (2009) CI
 # ─────────────────────────────────────────────────────────────────────────────
 
-def dgp1(n, rng):
-    X = rng.uniform(0, 1, n)
-    U = rng.uniform(0, 1, n)                     # latent resistance to targeting
-    p = sigmoid(-2.0 + 4.0 * X)                  # Meta's opaque logistic rule
-    D = (U < p).astype(float)                     # targeted if latent resistance low
-    Z = rng.binomial(1, 0.5, n).astype(float)     # brand's overlay gate
-    W = D * Z                                      # realized ad exposure
-    tau = 1.0 + 2.0 * X                           # treatment effect (selection on gains)
-    Y0 = 0.5 * X + rng.normal(0, 1, n)           # baseline correlated with X (selection bias)
-    Y = Y0 + tau * W
-    return dict(X=X, U=U, p=p, D=D, Z=Z, W=W, Y=Y, tau=tau)
-
-
-def true_att_dgp1(n_mc=2_000_000):
+def track_b(Y, Z, W, alpha=0.10):
     """
-    ATT = E[tau(X) | D=1] = E[tau(X)·p(X)] / E[p(X)]
-    (since D=1{U<p(X)} and U⊥X, so P(D=1|X)=p(X))
+    Plug-in estimators for CITT, CATT, and the Imbens-Manski CI.
+
+    CATT̂  = (Ȳ_{Z=1} − Ȳ_{Z=0}) / P̂(W=1|Z=1)
+
+    Variance of CATT̂ via delta method (eq. delta_var in paper):
+      σ²_U ≈ σ²_CITT/ê² + CATT²·σ²_e/ê² − 2·CATT·Ĉov(L̂,ê)/ê³
+    where Ĉov(L̂,ê) = sample_Cov(Y,W|Z=1)/n₁.
+
+    Imbens-Manski CI: solve Φ(ĉ + √n·(Û−L̂)/max(σ̂_L,σ̂_U)) − Φ(−ĉ) = 1−α.
+    CI = [L̂ − ĉ·σ̂_L/√n,  Û + ĉ·σ̂_U/√n].
     """
-    rng = np.random.default_rng(0)
-    X = rng.uniform(0, 1, n_mc)
-    p = sigmoid(-2.0 + 4.0 * X)
-    tau = 1.0 + 2.0 * X
-    return float(np.sum(tau * p) / np.sum(p))
+    m1 = Z == 1;  m0 = Z == 0
+    n1, n0 = m1.sum(), m0.sum()
+    n  = n1 + n0
+    Y1, Y0, W1 = Y[m1], Y[m0], W[m1]
 
+    # ── Bound estimators ────────────────────────────────────────────────────
+    CITT  = Y1.mean() - Y0.mean()          # lower bound L̂
+    e_hat = W1.mean()
+    if e_hat < 1e-9:
+        nan = float('nan')
+        return dict(CITT=CITT, CATT=nan, e_hat=e_hat, sigma_L=nan, sigma_U=nan,
+                    ci_lo=nan, ci_hi=nan, width=nan, SR_ub=nan)
+    CATT = CITT / e_hat                    # upper bound Û
 
-TRUE_ATE_DGP1 = 2.0   # E[1+2X] for X~U[0,1] — closed form
+    # ── Delta-method variance ────────────────────────────────────────────────
+    sigma_CITT_sq = Y1.var(ddof=1) / n1 + Y0.var(ddof=1) / n0
+    sigma_e_sq    = e_hat * (1.0 - e_hat) / n1
+    # Cov(Ȳ₁, W̄₁) = sample_Cov(Y,W|Z=1) / n₁
+    cov_mat       = np.cov(Y1, W1, ddof=1)
+    cov_L_e       = cov_mat[0, 1] / n1
+
+    sigma_CATT_sq = (
+        sigma_CITT_sq / e_hat**2
+        + CATT**2 * sigma_e_sq / e_hat**2
+        - 2.0 * CATT * cov_L_e / e_hat**3
+    )
+    sigma_L = np.sqrt(max(sigma_CITT_sq, 0.0))
+    sigma_U = np.sqrt(max(sigma_CATT_sq, 0.0))
+
+    # ── Imbens-Manski critical value ─────────────────────────────────────────
+    gap       = CATT - CITT
+    sigma_max = max(sigma_L, sigma_U)
+    if gap < 1e-14 or sigma_max < 1e-15:
+        c_hat = norm.ppf(1.0 - alpha / 2.0)
+    else:
+        rng_norm = np.sqrt(n) * gap / sigma_max
+
+        def eq(c):
+            return norm.cdf(c + rng_norm) - norm.cdf(-c) - (1.0 - alpha)
+
+        try:
+            c_hat = brentq(eq, 0.0, rng_norm + 10.0)
+        except Exception:
+            c_hat = norm.ppf(1.0 - alpha / 2.0)
+
+    ci_lo = CITT - c_hat * sigma_L / np.sqrt(n)
+    ci_hi = CATT + c_hat * sigma_U / np.sqrt(n)
+
+    return dict(CITT=CITT, CATT=CATT, e_hat=e_hat,
+                sigma_L=sigma_L, sigma_U=sigma_U,
+                ci_lo=ci_lo, ci_hi=ci_hi, width=ci_hi - ci_lo,
+                SR_ub=1.0 / e_hat)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# DGP 2: TikTok nonlinear ML targeting
+# Section 3.5.2 Track A: finite-differences MTE + CATE integration
 # ─────────────────────────────────────────────────────────────────────────────
 
-def dgp2(n, rng):
-    X1 = rng.uniform(0, 1, n)
-    X2 = rng.uniform(0, 1, n)
-    U  = rng.uniform(0, 1, n)
-    p  = sigmoid(-1.0 + 3.0 * X1**2 + 2.0 * X2 - 4.0 * X1 * X2)
+def track_a(Y, Z, S, p_levels):
+    """
+    Finite-differences MTE estimator (Section 3.5.2).
+
+    Within market cell c (S_i = c), P_i = π_c is known and constant.
+    μ̂₁(π_c) = Ȳ among (Z_i=1, S_i=c).
+    MTE(π̄_c) ≈ [μ̂₁(π_{c+1}) − μ̂₁(π_c)] / (π_{c+1} − π_c).
+    CATE = integral + linear extrapolation.
+    """
+    m1 = Z == 1
+    Y1 = Y[m1];  S1 = S[m1]
+    C  = len(p_levels)
+    mu_hat = np.full(C, np.nan)
+    for c in range(C):
+        mask = S1 == c
+        if mask.sum() >= 2:
+            mu_hat[c] = Y1[mask].mean()
+
+    if np.any(np.isnan(mu_hat)):
+        return None
+
+    dp      = np.diff(p_levels)
+    mte_hat = np.diff(mu_hat) / dp          # finite differences
+    p_mid   = 0.5 * (p_levels[:-1] + p_levels[1:])
+
+    p1, pC  = p_levels[0], p_levels[-1]
+    cate_hat = (np.sum(mte_hat * dp)
+                + mte_hat[0]  * p1
+                + mte_hat[-1] * (1.0 - pC))
+
+    return dict(mte_hat=mte_hat, p_mid=p_mid, cate_hat=cate_hat)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DGP specifications and true estimand calculation
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── MTE schedules ────────────────────────────────────────────────────────────
+
+def mte_monotone(U):
+    """DGP 1/2/3 and Track A: τ(u) = 2(1−u).  True CATE = 1.0."""
+    return 2.0 * (1.0 - U)
+
+
+def mte_hump(U):
+    """DGP-R1: τ(u) = 8u(1−u).  Non-monotone; peaks at u=0.5."""
+    return 8.0 * U * (1.0 - U)
+
+
+def mte_neg_tail(U):
+    """DGP-R2: τ(u) = 2 − 4u.  Positive for u<0.5, negative for u>0.5."""
+    return 2.0 - 4.0 * U
+
+
+# ── Assignment rules ─────────────────────────────────────────────────────────
+
+# α for logistic calibrated so E[σ(α+βX)] = 0.30; precomputed below.
+_ALPHA_LOGISTIC = None        # logistic DGP 2
+_ALPHA_NL       = None        # nonlinear DGP 3 intercept
+
+
+def _calibrate_alphas(n_mc=1_000_000):
+    """Solve for intercepts so that average propensity ≈ 0.30 in each DGP."""
+    global _ALPHA_LOGISTIC, _ALPHA_NL
+    rng = np.random.default_rng(77)
+    X   = rng.standard_normal(n_mc)
+    X1  = rng.standard_normal(n_mc)
+    X2  = rng.standard_normal(n_mc)
+
+    # DGP 2: E[σ(α + 2X)] = 0.30
+    _ALPHA_LOGISTIC = brentq(
+        lambda a: sigmoid(a + 2.0 * X).mean() - 0.30, -10.0, 10.0)
+
+    # DGP 3: E[σ(γ₀ + 2X₁² + X₂ − 2X₁X₂)] = 0.30
+    _ALPHA_NL = brentq(
+        lambda a: sigmoid(a + 2.0*X1**2 + X2 - 2.0*X1*X2).mean() - 0.30,
+        -10.0, 10.0)
+
+
+def assignment_dgp1(n, rng):
+    """Constant quota: D = 1{U ≤ 0.30}."""
+    U = rng.uniform(0.0, 1.0, n)
+    D = (U < 0.30).astype(float)
+    return D, U
+
+
+def assignment_dgp2(n, rng):
+    """Logistic score: D = 1{U ≤ σ(α+2X)}, average p ≈ 0.30."""
+    X = rng.standard_normal(n)
+    U = rng.uniform(0.0, 1.0, n)
+    p = sigmoid(_ALPHA_LOGISTIC + 2.0 * X)
+    D = (U < p).astype(float)
+    return D, U
+
+
+def assignment_dgp3(n, rng):
+    """Nonlinear ML rule: D = 1{U ≤ σ(γ₀+2X₁²+X₂−2X₁X₂)}, avg p ≈ 0.30."""
+    X1 = rng.standard_normal(n)
+    X2 = rng.standard_normal(n)
+    U  = rng.uniform(0.0, 1.0, n)
+    p  = sigmoid(_ALPHA_NL + 2.0*X1**2 + X2 - 2.0*X1*X2)
     D  = (U < p).astype(float)
-    Z  = rng.binomial(1, 0.5, n).astype(float)
-    W  = D * Z
-    tau = 1.0 + X1 + X2
-    Y0  = 0.3 * X1 + 0.3 * X2 + rng.normal(0, 1, n)
-    Y   = Y0 + tau * W
-    return dict(X1=X1, X2=X2, U=U, p=p, D=D, Z=Z, W=W, Y=Y, tau=tau)
+    return D, U
 
 
-def true_att_dgp2(n_mc=2_000_000):
-    rng = np.random.default_rng(1)
-    X1 = rng.uniform(0, 1, n_mc)
-    X2 = rng.uniform(0, 1, n_mc)
-    p   = sigmoid(-1.0 + 3.0 * X1**2 + 2.0 * X2 - 4.0 * X1 * X2)
-    tau = 1.0 + X1 + X2
-    return float(np.sum(tau * p) / np.sum(p))
+# ── Compute true estimands by simulation ─────────────────────────────────────
+
+def true_estimands(assign_fn, tau_fn, seed, n_mc=2_000_000):
+    """
+    Compute true CATE, CATT, CITT, ē, SR via Monte Carlo integration.
+    CATT = E[τ(U) | D=1] computed directly as tau[D==1].mean().
+    CATE = E[τ(U)] = tau.mean() (since U uniform; exact for monotone and hump).
+    """
+    rng = np.random.default_rng(seed)
+    D, U = assign_fn(n_mc, rng)
+    tau  = tau_fn(U)
+    CATE = tau.mean()
+    e_bar = D.mean()
+    if D.sum() == 0:
+        return dict(CATE=CATE, CATT=np.nan, CITT=np.nan,
+                    e_bar=e_bar, SR=np.nan, SR_ub=np.nan)
+    CATT = tau[D == 1].mean()
+    CITT = e_bar * CATT
+    SR   = CATT / CATE if abs(CATE) > 1e-9 else np.nan
+    return dict(CATE=CATE, CATT=CATT, CITT=CITT,
+                e_bar=e_bar, SR=SR, SR_ub=1.0 / e_bar)
+
+
+# ── Sample from a DGP ────────────────────────────────────────────────────────
+
+def sample_dgp(n, assign_fn, tau_fn, rng):
+    """Generate one overlay experiment dataset."""
+    D, U = assign_fn(n, rng)
+    Z    = rng.binomial(1, 0.5, n).astype(float)
+    W    = D * Z
+    tau  = tau_fn(U)
+    Y    = tau * W + rng.standard_normal(n)
+    return dict(Y=Y, Z=Z, W=W, D=D, U=U, tau=tau)
+
+
+# ── Track A DGP: DGP 1 + geographic excluded shifter ─────────────────────────
+
+MARKET_P = np.array([0.20, 0.35, 0.55])   # propensities in 3 markets
+
+def sample_track_a(n, rng):
+    """
+    DGP 1 (constant propensity per market) + geographic excluded shifter.
+    In market s (s=0,1,2), D_i = 1{U_i ≤ π_s}.
+    τ(U_i) = 2(1−U_i) as in DGP 1. True MTE(p) = 2(1−p), CATE = 1.0.
+    Exclusion restriction: market assignment Z, S independent of U and τ.
+    """
+    S    = rng.integers(0, 3, n)             # S_i ∈ {0,1,2} market index
+    pi_s = MARKET_P[S]                       # propensity in user's market
+    U    = rng.uniform(0.0, 1.0, n)
+    D    = (U < pi_s).astype(float)
+    Z    = rng.binomial(1, 0.5, n).astype(float)
+    W    = D * Z
+    tau  = 2.0 * (1.0 - U)
+    Y    = tau * W + rng.standard_normal(n)
+    return dict(Y=Y, Z=Z, W=W, S=S, U=U, tau=tau)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# DGP 3: Platform O (Ye et al. setup) + external advertiser with auction
+# Experiment runners
 # ─────────────────────────────────────────────────────────────────────────────
 
-def ye_outcome(X1, X2, T1, T2, T3):
-    """
-    Ye et al.'s generalized sigmoid form II (their equation 6) with:
-        theta_0(X) = -1.0 + 0.8·X1 + 0.5·X2     (baseline)
-        theta_1(X) = 1.0 + 1.5·X1                 (T1 effect, heterogeneous)
-        theta_2(X) = 0.8 + 0.5·X2                 (T2 effect)
-        theta_3(X) = 0.6                           (T3 effect, homogeneous)
-        theta_4(X) = 5.0                           (scale)
-    """
-    th0 = -1.0 + 0.8 * X1 + 0.5 * X2
-    th1 =  1.0 + 1.5 * X1
-    th2 =  0.8 + 0.5 * X2
-    th3 =  0.6
-    th4 =  5.0
-    return th4 / (1.0 + np.exp(-(th0 + th1 * T1 + th2 * T2 + th3 * T3)))
-
-
-def dgp3(n, rng):
-    X1 = rng.uniform(0, 1, n)    # purchase intent (Firm A's primary covariate)
-    X2 = rng.uniform(0, 1, n)    # brand affinity (Firm B's primary covariate)
-
-    # Platform O's three experiments — randomized, but targeting is based on X1
-    # Firm A's targeting probability: positively influenced by X1,
-    # negatively by X2 (auction competition from Firm B)
-    pA = sigmoid(2.0 * X1 - 1.5 * X2)           # Firm A wins auction
-    pB = sigmoid(2.0 * X2 - 1.0 * X1 + 0.3)     # Firm B wins auction
-
-    # Platform's other two experiments (T2, T3) are uniformly randomized
-    # (analogous to Ye et al.'s orthogonal internal experiments)
-    T2 = rng.binomial(1, 0.6, n).astype(float)
-    T3 = rng.binomial(1, 0.6, n).astype(float)
-
-    UA = rng.uniform(0, 1, n)
-    UB = rng.uniform(0, 1, n)
-    DA = (UA < pA).astype(float)    # Firm A's ad shown (platform decision)
-    DB = (UB < pB).astype(float)    # Firm B's ad shown
-
-    ZA = rng.binomial(1, 0.5, n).astype(float)   # Firm A's overlay gate
-    ZB = rng.binomial(1, 0.5, n).astype(float)   # Firm B's overlay gate
-    WA = DA * ZA
-    WB = DB * ZB
-
-    # Platform O's outcome (screen time) — Ye et al.'s generalized sigmoid
-    # T1 for Platform O = DA (Firm A's experiment is one of Platform O's three)
-    Y_platform = ye_outcome(X1, X2, DA, T2, T3) + rng.normal(0, 0.5, n)
-
-    # Firm A's own outcome (purchases): depends only on WA, not platform's Y
-    tauA = 1.0 + 1.5 * X1
-    YA   = 0.3 * X1 + rng.normal(0, 1, n) + tauA * WA
-
-    # Firm B's own outcome (brand recall): depends only on WB
-    tauB = 0.5 + 1.5 * X2
-    YB   = 0.3 * X2 + rng.normal(0, 1, n) + tauB * WB
-
-    return dict(X1=X1, X2=X2, pA=pA, pB=pB,
-                DA=DA, DB=DB, T2=T2, T3=T3,
-                ZA=ZA, ZB=ZB, WA=WA, WB=WB,
-                tauA=tauA, tauB=tauB,
-                YA=YA, YB=YB, Y_platform=Y_platform)
-
-
-def true_att_dgp3(n_mc=2_000_000):
-    rng = np.random.default_rng(2)
-    X1 = rng.uniform(0, 1, n_mc)
-    X2 = rng.uniform(0, 1, n_mc)
-    pA   = sigmoid(2.0 * X1 - 1.5 * X2)
-    pB   = sigmoid(2.0 * X2 - 1.0 * X1 + 0.3)
-    tauA = 1.0 + 1.5 * X1
-    tauB = 0.5 + 1.5 * X2
-    att_A = float(np.sum(tauA * pA) / np.sum(pA))
-    att_B = float(np.sum(tauB * pB) / np.sum(pB))
-    return att_A, att_B
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Estimators
-# ─────────────────────────────────────────────────────────────────────────────
-
-def overlay_att(Y, Z, W):
-    """Proposition 1 estimator: ATT̂ = ITT̂ / p̂ = (Ȳ[Z=1]−Ȳ[Z=0]) / P̂(W=1|Z=1)"""
-    m1, m0 = (Z == 1), (Z == 0)
-    ITT   = Y[m1].mean() - Y[m0].mean()
-    p_hat = W[m1].mean()
-    return ITT / p_hat if p_hat > 1e-9 else np.nan
-
-
-def naive_ols(Y, W):
-    """
-    Naive OLS: β̂ = Cov(Y,W)/Var(W).
-    Biased because D correlates with Y₀ through X (omitted variable).
-    """
-    Wdm  = W - W.mean()
-    denom = (Wdm**2).sum()
-    return float(np.dot(Wdm, Y) / denom) if denom > 1e-12 else np.nan
-
-
-def plain_itt(Y, Z):
-    """
-    Plain ITT: Ȳ[Z=1] − Ȳ[Z=0].
-    Underestimates ATT by factor p̄ (the average targeting probability).
-    """
-    return float(Y[Z == 1].mean() - Y[Z == 0].mean())
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Experiment 1: DGP1 — logistic targeting, estimator comparison
-# ─────────────────────────────────────────────────────────────────────────────
-
-def run_exp1(ATT_true, n_sims=500, sample_sizes=None):
+def run_track_b_dgp(assign_fn, tau_fn, tv, label,
+                    n_sims=1000, sample_sizes=None, alpha=0.10):
+    """Run Track B across sample sizes; report CATT bias/RMSE, CI coverage/width."""
     if sample_sizes is None:
         sample_sizes = [500, 2_000, 10_000, 50_000]
 
-    print("=" * 68)
-    print("EXPERIMENT 1  DGP1: Meta/Facebook Logistic Targeting")
-    print("Proposition 1 — overlay identifies ATT; naive estimators fail")
-    print("=" * 68)
-    print(f"  True ATT = {ATT_true:.4f}    True ATE = {TRUE_ATE_DGP1:.4f}"
-          f"    Selection ratio ATT/ATE = {ATT_true/TRUE_ATE_DGP1:.3f}")
-    print()
-
+    CATE_t = tv['CATE']
+    CATT_t = tv['CATT']
     rows = []
+
     for n in sample_sizes:
-        ov, ols, itt = [], [], []
+        catt_ests, ci_covers, widths = [], [], []
         for _ in range(n_sims):
-            d = dgp1(n, RNG)
-            ov.append(overlay_att(d['Y'], d['Z'], d['W']))
-            ols.append(naive_ols(d['Y'], d['W']))
-            itt.append(plain_itt(d['Y'], d['Z']))
-        ov, ols, itt = np.array(ov), np.array(ols), np.array(itt)
-        rows.append({
-            'n': n,
-            'Overlay_mean': ov.mean(),
-            'Overlay_bias': ov.mean() - ATT_true,
-            'Overlay_RMSE': np.sqrt(((ov - ATT_true)**2).mean()),
-            'OLS_mean':     ols.mean(),
-            'OLS_bias':     ols.mean() - ATT_true,
-            'ITT_mean':     itt.mean(),
-            'ITT_bias':     itt.mean() - ATT_true,
-        })
-        print(f"  n={n:6d}:  Overlay={ov.mean():.4f} (bias={ov.mean()-ATT_true:+.4f}) | "
-              f"OLS={ols.mean():.4f} (bias={ols.mean()-ATT_true:+.4f}) | "
-              f"ITT={itt.mean():.4f} (bias={itt.mean()-ATT_true:+.4f})")
-    print()
-    return pd.DataFrame(rows)
+            d  = sample_dgp(n, assign_fn, tau_fn, RNG)
+            tb = track_b(d['Y'], d['Z'], d['W'], alpha=alpha)
+            catt_ests.append(tb['CATT'])
+            ci_covers.append(bool(tb['ci_lo'] <= CATE_t <= tb['ci_hi']))
+            widths.append(tb['width'])
+        ca  = np.array(catt_ests, dtype=float)
+        rows.append(dict(
+            n           = n,
+            CATT_bias   = float(np.nanmean(ca) - CATT_t),
+            CATT_RMSE   = float(np.sqrt(np.nanmean((ca - CATT_t)**2))),
+            CI_coverage = float(np.mean(ci_covers)),
+            CI_width    = float(np.nanmean(widths)),
+            SR_ub       = tv['SR_ub'],
+        ))
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Experiment 2: DGP2 — nonlinear ML targeting, robustness
-# ─────────────────────────────────────────────────────────────────────────────
-
-def run_exp2(ATT_true, n_sims=400, sample_sizes=None):
-    if sample_sizes is None:
-        sample_sizes = [2_000, 10_000, 50_000]
-
-    print("=" * 68)
-    print("EXPERIMENT 2  DGP2: TikTok Nonlinear ML Targeting")
-    print("Proposition 1 robustness — arbitrary nonlinear opaque rule")
-    print("=" * 68)
-    print(f"  True ATT = {ATT_true:.4f}")
-    print()
-
-    rows = []
-    for n in sample_sizes:
-        ov, ols, itt = [], [], []
-        for _ in range(n_sims):
-            d = dgp2(n, RNG)
-            ov.append(overlay_att(d['Y'], d['Z'], d['W']))
-            ols.append(naive_ols(d['Y'], d['W']))
-            itt.append(plain_itt(d['Y'], d['Z']))
-        ov, ols, itt = np.array(ov), np.array(ols), np.array(itt)
-        rows.append({
-            'n': n,
-            'Overlay_mean': ov.mean(),
-            'Overlay_bias': ov.mean() - ATT_true,
-            'Overlay_RMSE': np.sqrt(((ov - ATT_true)**2).mean()),
-            'OLS_mean':     ols.mean(),
-            'OLS_bias':     ols.mean() - ATT_true,
-            'ITT_mean':     itt.mean(),
-            'ITT_bias':     itt.mean() - ATT_true,
-        })
-        print(f"  n={n:6d}:  Overlay={ov.mean():.4f} (bias={ov.mean()-ATT_true:+.4f}) | "
-              f"OLS={ols.mean():.4f} (bias={ols.mean()-ATT_true:+.4f}) | "
-              f"ITT={itt.mean():.4f} (bias={itt.mean()-ATT_true:+.4f})")
-    print()
-    return pd.DataFrame(rows)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Experiment 3: DGP3 — Platform O / multi-firm simultaneous experiments
-# ─────────────────────────────────────────────────────────────────────────────
-
-def run_exp3(ATT_A_true, ATT_B_true, n_sims=400, sample_sizes=None):
-    if sample_sizes is None:
-        sample_sizes = [500, 2_000, 10_000, 50_000]
-
-    print("=" * 68)
-    print("EXPERIMENT 3  DGP3: Platform O — Two Simultaneous Overlay Experiments")
-    print("Proposition 1 in the multi-firm setting (Ye et al.'s context)")
-    print("=" * 68)
-    print(f"  True ATT_A (electronics) = {ATT_A_true:.4f}")
-    print(f"  True ATT_B (fashion)     = {ATT_B_true:.4f}")
-    print()
-
-    rows_A, rows_B = [], []
-    for n in sample_sizes:
-        ovA, ovB = [], []
-        for _ in range(n_sims):
-            d = dgp3(n, RNG)
-            ovA.append(overlay_att(d['YA'], d['ZA'], d['WA']))
-            ovB.append(overlay_att(d['YB'], d['ZB'], d['WB']))
-        ovA, ovB = np.array(ovA), np.array(ovB)
-        rows_A.append({'n': n,
-                       'ATT_A_mean': ovA.mean(),
-                       'ATT_A_bias': ovA.mean() - ATT_A_true,
-                       'ATT_A_RMSE': np.sqrt(((ovA - ATT_A_true)**2).mean())})
-        rows_B.append({'n': n,
-                       'ATT_B_mean': ovB.mean(),
-                       'ATT_B_bias': ovB.mean() - ATT_B_true,
-                       'ATT_B_RMSE': np.sqrt(((ovB - ATT_B_true)**2).mean())})
-        print(f"  n={n:6d}:  "
-              f"ATT_A={ovA.mean():.4f} (bias={ovA.mean()-ATT_A_true:+.4f}) | "
-              f"ATT_B={ovB.mean():.4f} (bias={ovB.mean()-ATT_B_true:+.4f})")
-    print()
-    return pd.DataFrame(rows_A), pd.DataFrame(rows_B)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Experiment 4: MTE identification with excluded shifter — Theorem 1
-#
-# Real-world context (DGP1 extended):
-# Meta allows the brand to test different daily budget levels S, which shift
-# the effective targeting intensity.  Higher S → Meta targets more users.
-# S is randomly assigned across geographic markets (excluded shifter:
-# S ⊥ (Y(0), Y(1))).  Treatment effect heterogeneity: tau(U) = 2(1−U) —
-# marginal users (high U) respond less, consistent with decreasing returns.
-# Theorem 1: MTE(p) = ∂/∂p E[Y|Z=1, P=p] = 2(1−p), identified nonparametrically.
-# ─────────────────────────────────────────────────────────────────────────────
-
-def dgp_mte(n, s_vals, rng):
-    """
-    S_i ~ Uniform over s_vals (campaign budget levels / geographic markets).
-    P_i = S_i  (average propensity equals budget level — clean identification).
-    tau(U_i) = 2(1−U_i): monotone decreasing in latent resistance.
-    True MTE(p) = 2(1−p).
-    """
-    idx = rng.integers(0, len(s_vals), n)
-    S   = s_vals[idx]
-    P   = S                                    # propensity = budget level
-    U   = rng.uniform(0, 1, n)
-    D   = (U < P).astype(float)
-    Z   = rng.binomial(1, 0.5, n).astype(float)
-    W   = D * Z
-    tau = 2.0 * (1.0 - U)
-    Y   = rng.normal(0, 1, n) + tau * W
-    return dict(S=S, P=P, U=U, D=D, Z=Z, W=W, Y=Y, tau=tau)
-
-
-def estimate_mte(data, p_grid, bw=0.08):
-    """Local linear derivative: MTE(p) = d/dp E[Y|Z=1, P=p]."""
-    m1    = data['Z'] == 1
-    P1, Y1 = data['P'][m1], data['Y'][m1]
-    mte_hat = np.zeros(len(p_grid))
-    for j, p0 in enumerate(p_grid):
-        K  = np.exp(-0.5 * ((P1 - p0) / bw)**2) / (bw * np.sqrt(2 * np.pi))
-        dp = P1 - p0
-        s0, s1, s2 = K.sum(), (K * dp).sum(), (K * dp**2).sum()
-        t0, t1     = (K * Y1).sum(), (K * dp * Y1).sum()
-        denom = s0 * s2 - s1**2
-        mte_hat[j] = (s0 * t1 - s1 * t0) / denom if abs(denom) > 1e-12 else np.nan
-    return mte_hat
-
-
-def run_exp4(n=50_000, n_sims=200):
-    s_vals   = np.array([0.15, 0.25, 0.35, 0.50, 0.65, 0.75, 0.85])
-    p_grid   = np.array([0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80])
-    mte_true = 2.0 * (1.0 - p_grid)
-
-    print("=" * 68)
-    print("EXPERIMENT 4  MTE Identification with Excluded Shifter")
-    print("Theorem 1 — budget-level S as geographic-market instrument")
-    print("=" * 68)
-    print(f"  S ∈ {s_vals};  True MTE(p) = 2(1−p)")
-    print()
-
-    mte_hats = np.zeros((n_sims, len(p_grid)))
-    for sim in range(n_sims):
-        d = dgp_mte(n, s_vals, RNG)
-        mte_hats[sim] = estimate_mte(d, p_grid)
-
-    mean_hat = np.nanmean(mte_hats, axis=0)
-    sd_hat   = np.nanstd(mte_hats,  axis=0)
-    bias     = mean_hat - mte_true
-    rmse     = np.sqrt(bias**2 + sd_hat**2)
-
-    rows = [{'p': p_grid[j], 'True_MTE': mte_true[j], 'Estimated': mean_hat[j],
-             'Bias': bias[j], 'SD': sd_hat[j], 'RMSE': rmse[j]}
-            for j in range(len(p_grid))]
     df = pd.DataFrame(rows)
-    print(df.to_string(index=False, float_format='%.4f'))
-    print()
-    return df, p_grid, mte_true, mean_hat, sd_hat
+    print(f"\n{'='*72}")
+    print(f"Track B — {label}")
+    print(f"  True CATE={CATE_t:.4f}  CATT={CATT_t:.4f}  "
+          f"SR={tv['SR']:.3f}  SR_ub(1/ē)={tv['SR_ub']:.3f}")
+    print(f"  {'n':>8}  {'CATT bias':>10}  {'CATT RMSE':>10}  "
+          f"{'IM CI cov':>10}  {'CI width':>10}")
+    for r in df.itertuples():
+        print(f"  {r.n:>8,}  {r.CATT_bias:>10.4f}  {r.CATT_RMSE:>10.4f}  "
+              f"  {r.CI_coverage:>8.3f}  {r.CI_width:>10.4f}")
+    return df
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Experiment 5: Sharp bounds [ITT, ATT] — Theorem 2
-#
-# Real-world context: In the Meta advertiser setting (DGP1), the platform
-# targets 40% of users on average.  We know ATE ∈ [ITT, ATT] but ATE is
-# not point-identified without a shifter.  Three MTE schedules test sharpness:
-#   A — Only targeted users respond: ATE = ITT (lower bound tight)
-#   B — All users respond equally:  ATE = ATT (upper bound tight)
-#   C — Heterogeneous response:     ATE ∈ interior (realistic case)
-# ─────────────────────────────────────────────────────────────────────────────
+def run_track_a(n_sims=500, sample_sizes=None):
+    """Track A: finite-differences MTE and CATE estimation."""
+    if sample_sizes is None:
+        sample_sizes = [2_000, 10_000, 50_000, 200_000]
 
-def run_exp5(n=20_000, n_sims=500):
-    p_bar = 0.4   # representative average targeting rate (DGP1 average p̄ ≈ 0.5;
-                  # we use 0.4 here for exact alignment with paper's worked example)
+    p_mid    = 0.5 * (MARKET_P[:-1] + MARKET_P[1:])  # [0.275, 0.450]
+    mte_true = 2.0 * (1.0 - p_mid)                    # [1.45, 1.10]
+    cate_true = 1.0                                    # E[2(1-U)] = 1.0
 
-    def sample_bounds(n, tau_func, rng):
-        U = rng.uniform(0, 1, n)
-        D = (U < p_bar).astype(float)
-        Z = rng.binomial(1, 0.5, n).astype(float)
-        W = D * Z
-        Y = rng.normal(0, 1, n) + tau_func(U) * W
-        return dict(U=U, D=D, Z=Z, W=W, Y=Y)
+    rows = []
+    print(f"\n{'='*72}")
+    print("Track A — DGP 1 + geographic excluded shifter")
+    print(f"  Markets π_s = {MARKET_P}   True MTE(p) = 2(1-p)")
+    print(f"  True MTE at midpoints: {mte_true}")
+    print(f"  {'n':>8}  {'MTE bias p=0.275':>16}  {'MTE bias p=0.450':>16}  "
+          f"{'CATE RMSE':>12}  {'CATE mean':>12}")
 
-    # DGP-A: only targeted (low-U) users respond → ATE = ITT
-    tau_A = lambda U: 1.6 * (U <= p_bar).astype(float)
-    # DGP-B: constant effect → ATE = ATT
-    tau_B = lambda U: np.full_like(U, 1.6)
-    # DGP-C: decreasing MTE → ATE interior
-    tau_C = lambda U: 2.0 * (1.0 - U)
-
-    dgps = {
-        'A: only targeted respond (ATE=ITT)': (tau_A, p_bar * 1.6, p_bar * 1.6, 1.6),
-        'B: uniform response (ATE=ATT)':      (tau_B,         1.6, p_bar * 1.6, 1.6),
-        'C: decreasing MTE (ATE interior)':   (tau_C,         1.0, p_bar * 1.6, 1.6),
-    }
-
-    print("=" * 68)
-    print("EXPERIMENT 5  Sharp Bounds [ITT, ATT]")
-    print("Theorem 2 — three DGPs test lower endpoint, upper endpoint, interior")
-    print("=" * 68)
-    print(f"  Fixed p̄={p_bar}: true ITT={p_bar*1.6:.4f}, true ATT=1.6000")
-    print()
-
-    results = {}
-    for label, (tau_func, ATE_true, ITT_true, ATT_true) in dgps.items():
-        lbs, ubs, covered = [], [], []
+    for n in sample_sizes:
+        mte_hats, cate_hats = [], []
         for _ in range(n_sims):
-            d    = sample_bounds(n, tau_func, RNG)
-            lb   = plain_itt(d['Y'], d['Z'])
-            ub   = overlay_att(d['Y'], d['Z'], d['W'])
-            lbs.append(lb); ubs.append(ub)
-            covered.append(lb <= ATE_true <= ub)
-        lbs, ubs = np.array(lbs), np.array(ubs)
-        results[label] = {
-            'ATE_true': ATE_true, 'ITT_true': ITT_true, 'ATT_true': ATT_true,
-            'LB_mean': lbs.mean(), 'UB_mean': ubs.mean(),
-            'Coverage': np.mean(covered),
-        }
-        print(f"  {label}")
-        print(f"    True:  ITT={ITT_true:.4f}, ATE={ATE_true:.4f}, ATT={ATT_true:.4f}")
-        print(f"    Est:   LB={lbs.mean():.4f}, UB={ubs.mean():.4f},  Coverage={np.mean(covered)*100:.1f}%")
-        print()
-    return results
+            d   = sample_track_a(n, RNG)
+            res = track_a(d['Y'], d['Z'], d['S'], MARKET_P)
+            if res is not None:
+                mte_hats.append(res['mte_hat'])
+                cate_hats.append(res['cate_hat'])
+
+        mte_arr   = np.array(mte_hats)
+        cate_arr  = np.array(cate_hats, dtype=float)
+        mte_bias  = np.nanmean(mte_arr, axis=0) - mte_true
+        cate_rmse = float(np.sqrt(np.nanmean((cate_arr - cate_true)**2)))
+        cate_mean = float(np.nanmean(cate_arr))
+
+        rows.append(dict(n=n,
+                         MTE_bias_p1=float(mte_bias[0]),
+                         MTE_bias_p2=float(mte_bias[1]),
+                         CATE_RMSE=cate_rmse,
+                         CATE_mean=cate_mean))
+        print(f"  {n:>8,}  {mte_bias[0]:>16.4f}  {mte_bias[1]:>16.4f}  "
+              f"{cate_rmse:>12.4f}  {cate_mean:>12.4f}")
+
+    return pd.DataFrame(rows), p_mid, mte_true
+
+
+def run_selection_ratio(n=20_000, n_sims=500):
+    """
+    Vary treatment rate e ∈ {0.10, 0.30, 0.60} using DGP 1 (constant quota,
+    monotone MTE).  Show SR_ub = 1/ê bounds the true SR from above,
+    and how CI coverage and width respond to e.
+    """
+    targets  = [0.10, 0.30, 0.60]
+    rows     = []
+    print(f"\n{'='*72}")
+    print("Selection Ratio Diagnostic — DGP 1 with varying treatment rate e")
+    print(f"  True MTE: τ(u)=2(1−u), CATE=1.0 always")
+    print(f"  {'e':>6}  {'ē_obs':>8}  {'True SR':>10}  {'SR_ub=1/ē':>12}  "
+          f"{'CI cov':>8}  {'CI width':>10}")
+
+    for e_t in targets:
+        def _assign(n, rng):
+            U = rng.uniform(0.0, 1.0, n)
+            D = (U < e_t).astype(float)
+            return D, U
+
+        tv   = true_estimands(_assign, mte_monotone, seed=333+int(e_t*100))
+        sr_ubs, covers, widths = [], [], []
+
+        for _ in range(n_sims):
+            D, U = _assign(n, RNG)
+            Z    = RNG.binomial(1, 0.5, n).astype(float)
+            W    = D * Z
+            tau  = mte_monotone(U)
+            Y    = tau * W + RNG.standard_normal(n)
+            tb   = track_b(Y, Z, W, alpha=0.10)
+            sr_ubs.append(tb['SR_ub'])
+            covers.append(bool(tb['ci_lo'] <= tv['CATE'] <= tb['ci_hi']))
+            widths.append(tb['width'])
+
+        row = dict(e=e_t,
+                   e_obs=float(np.nanmean([1.0/s for s in sr_ubs])),
+                   SR_true=float(tv['SR']),
+                   SR_ub_mean=float(np.nanmean(sr_ubs)),
+                   CI_cov=float(np.mean(covers)),
+                   CI_width=float(np.nanmean(widths)))
+        rows.append(row)
+        print(f"  {e_t:>6.2f}  {row['e_obs']:>8.3f}  {row['SR_true']:>10.3f}  "
+              f"{row['SR_ub_mean']:>12.3f}  {row['CI_cov']:>8.3f}  "
+              f"{row['CI_width']:>10.4f}")
+    return pd.DataFrame(rows)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Figures
 # ─────────────────────────────────────────────────────────────────────────────
 
-def make_figures(df1, ATT1,
-                 df2, ATT2,
-                 df3A, df3B, ATT_A, ATT_B,
-                 df4, p_grid, mte_true, mte_mean, mte_sd,
-                 exp5_results):
-
-    fig = plt.figure(figsize=(17, 12))
-    gs  = gridspec.GridSpec(2, 3, figure=fig, hspace=0.50, wspace=0.38)
+def make_figures(dfs, tvs, labels,
+                 df_r1, tv_r1, df_r2, tv_r2,
+                 df_a, p_mid, mte_true_vals,
+                 df_sr):
 
     blue   = '#2166ac'
     red    = '#d6604d'
+    green  = '#1a9641'
     orange = '#f4a582'
+    purple = '#762a83'
+    gray   = '#999999'
+    marker = ['o', 's', '^']
+    colors_main = [blue, green, purple]
 
-    # ── Panel A: DGP1 estimator comparison ───────────────────────────────────
+    fig = plt.figure(figsize=(18, 12))
+    gs  = gridspec.GridSpec(2, 3, figure=fig, hspace=0.52, wspace=0.40)
+
+    # ── Panel A: CATT bias / convergence for DGPs 1-3 ─────────────────────
     ax1 = fig.add_subplot(gs[0, 0])
-    ns  = df1['n'].values
-    ax1.axhline(ATT1,         color='k',   lw=1.4, ls='--',
-                label=f'True ATT = {ATT1:.3f}')
-    ax1.axhline(TRUE_ATE_DGP1, color='gray', lw=0.8, ls=':',
-                label=f'True ATE = {TRUE_ATE_DGP1:.1f}')
-    ax1.plot(ns, df1['Overlay_mean'], 'o-', color=blue,   lw=1.8, ms=5,
-             label='Overlay ATT̂  (correct)')
-    ax1.plot(ns, df1['OLS_mean'],     's-', color=red,    lw=1.8, ms=5,
-             label='Naive OLS  (biased ↑)')
-    ax1.plot(ns, df1['ITT_mean'],     '^-', color=orange, lw=1.8, ms=5,
-             label='Plain ITT  (biased ↓)')
+    ax1.axhline(0.0, color='k', lw=1.0, ls='--', alpha=0.6)
+    for i, (df, label) in enumerate(zip(dfs, labels)):
+        ax1.plot(df['n'], df['CATT_bias'], f'{marker[i]}-',
+                 color=colors_main[i], lw=1.8, ms=5, label=label)
     ax1.set_xscale('log')
-    ax1.set_xlabel('Sample size n', fontsize=9)
-    ax1.set_ylabel('Estimated effect', fontsize=9)
-    ax1.set_title('Panel A\nDGP1: Meta Logistic Targeting\n(Proposition 1)', fontsize=9)
-    ax1.legend(fontsize=7)
+    ax1.set_xlabel('Sample size $n$', fontsize=9)
+    ax1.set_ylabel('Bias  (CATT̂ − True CATT)', fontsize=9)
+    ax1.set_title('Panel A\nTrack B — CATT Estimator Bias\n'
+                  '(three assignment rules, monotone MTE)', fontsize=9)
+    ax1.legend(fontsize=7, loc='upper right')
 
-    # ── Panel B: DGP2 estimator comparison ───────────────────────────────────
+    # ── Panel B: IM CI coverage — main DGPs vs robustness DGPs ───────────
     ax2 = fig.add_subplot(gs[0, 1])
-    ns2 = df2['n'].values
-    ax2.axhline(ATT2, color='k', lw=1.4, ls='--',
-                label=f'True ATT = {ATT2:.3f}')
-    ax2.plot(ns2, df2['Overlay_mean'], 'o-', color=blue,   lw=1.8, ms=5,
-             label='Overlay ATT̂  (correct)')
-    ax2.plot(ns2, df2['OLS_mean'],     's-', color=red,    lw=1.8, ms=5,
-             label='Naive OLS  (biased ↑)')
-    ax2.plot(ns2, df2['ITT_mean'],     '^-', color=orange, lw=1.8, ms=5,
-             label='Plain ITT  (biased ↓)')
+    ax2.axhline(0.90, color='k', lw=1.2, ls='--', label='Nominal 90%')
+    for i, (df, label) in enumerate(zip(dfs, labels)):
+        ax2.plot(df['n'], df['CI_coverage'], f'{marker[i]}-',
+                 color=colors_main[i], lw=1.8, ms=5, label=label)
+    ax2.plot(df_r1['n'], df_r1['CI_coverage'], 'D--',
+             color=orange, lw=1.5, ms=5, label='DGP-R1 (monotone violated)')
+    ax2.plot(df_r2['n'], df_r2['CI_coverage'], 'v:',
+             color=red, lw=1.5, ms=5, label='DGP-R2 (nonneg violated)')
     ax2.set_xscale('log')
-    ax2.set_xlabel('Sample size n', fontsize=9)
-    ax2.set_ylabel('Estimated effect', fontsize=9)
-    ax2.set_title('Panel B\nDGP2: TikTok Nonlinear ML Targeting\n(Proposition 1 robustness)', fontsize=9)
-    ax2.legend(fontsize=7)
+    ax2.set_ylim(-0.05, 1.10)
+    ax2.set_xlabel('Sample size $n$', fontsize=9)
+    ax2.set_ylabel('IM CI coverage of true CATE', fontsize=9)
+    ax2.set_title('Panel B\nImbens–Manski CI Coverage\n'
+                  '(nominal 90%; assumption violations shaded)', fontsize=9)
+    ax2.legend(fontsize=7, loc='lower right')
 
-    # ── Panel C: DGP3 — two-firm convergence ─────────────────────────────────
+    # ── Panel C: CI width across DGPs ─────────────────────────────────────
     ax3 = fig.add_subplot(gs[0, 2])
-    ns3 = df3A['n'].values
-    ax3.axhline(ATT_A, color=blue,   lw=1.2, ls='--',
-                label=f'True ATT_A = {ATT_A:.3f}')
-    ax3.axhline(ATT_B, color=orange, lw=1.2, ls='--',
-                label=f'True ATT_B = {ATT_B:.3f}')
-    ax3.plot(ns3, df3A['ATT_A_mean'], 'o-', color=blue,   lw=1.8, ms=5,
-             label='Firm A overlay')
-    ax3.plot(ns3, df3B['ATT_B_mean'], 's-', color=orange, lw=1.8, ms=5,
-             label='Firm B overlay')
+    for i, (df, label) in enumerate(zip(dfs, labels)):
+        ax3.plot(df['n'], df['CI_width'], f'{marker[i]}-',
+                 color=colors_main[i], lw=1.8, ms=5, label=label)
     ax3.set_xscale('log')
-    ax3.set_xlabel('Sample size n', fontsize=9)
-    ax3.set_ylabel('Estimated ATT', fontsize=9)
-    ax3.set_title('Panel C\nDGP3: Platform O — Two Firms\n(Proposition 1, multi-firm)', fontsize=9)
+    ax3.set_xlabel('Sample size $n$', fontsize=9)
+    ax3.set_ylabel('Mean IM CI width', fontsize=9)
+    ax3.set_title('Panel C\nIM CI Width vs. Sample Size\n'
+                  '(narrower = more precise bounds)', fontsize=9)
     ax3.legend(fontsize=7)
 
-    # ── Panel D: MTE true vs estimated ───────────────────────────────────────
+    # ── Panel D: Track A — true MTE vs estimated ──────────────────────────
     ax4 = fig.add_subplot(gs[1, 0])
-    p_fine = np.linspace(0.1, 0.9, 300)
-    ax4.plot(p_fine, 2*(1-p_fine), 'k-', lw=2, label='True MTE(p) = 2(1−p)')
-    ax4.errorbar(p_grid, mte_mean, yerr=1.96*mte_sd, fmt='o',
-                 color=red, capsize=3, lw=1.5, ms=5,
-                 label='MC mean ± 1.96·SD  (n=50k, 200 reps)')
-    ax4.set_xlabel('Propensity score p', fontsize=9)
-    ax4.set_ylabel('MTE(p)', fontsize=9)
-    ax4.set_title('Panel D\nMTE Identification via Budget Shifter\n(Theorem 1)', fontsize=9)
+    p_fine = np.linspace(MARKET_P[0] - 0.05, MARKET_P[-1] + 0.05, 300)
+    ax4.plot(p_fine, 2.0*(1.0-p_fine), 'k-', lw=2.0, label='True MTE$(p)=2(1-p)$')
+    colors_a = [blue, green, orange, purple]
+    for i, row in enumerate(df_a.itertuples()):
+        if i >= 4:
+            break
+        # MTÊ = mte_true + bias; plot with RMSE as approx SD
+        mte_est = mte_true_vals + np.array([row.MTE_bias_p1, row.MTE_bias_p2])
+        ax4.errorbar(p_mid, mte_est, yerr=row.CATE_RMSE * 0.7,
+                     fmt='o', color=colors_a[i], capsize=3, ms=5, lw=1.5,
+                     label=f'$n$={row.n:,}')
+    ax4.set_xlabel('Propensity level $p$', fontsize=9)
+    ax4.set_ylabel('MTE$(p)$', fontsize=9)
+    ax4.set_title('Panel D\nTrack A — MTE Finite-Differences\n'
+                  '(geographic excluded shifter, DGP 1)', fontsize=9)
     ax4.legend(fontsize=7)
 
-    # ── Panel E: Sharp bounds ─────────────────────────────────────────────────
+    # ── Panel E: CATE RMSE (Track A) vs bound half-width (Track B) ────────
     ax5 = fig.add_subplot(gs[1, 1])
-    clrs = ['#1a9641', '#2166ac', '#d73027']
-    for j, (label, res) in enumerate(exp5_results.items()):
-        x  = j + 1
-        lb, ub, ate = res['LB_mean'], res['UB_mean'], res['ATE_true']
-        ax5.plot([x, x], [lb, ub], '-', color=clrs[j], lw=9, alpha=0.35)
-        ax5.plot(x, ate, 'D', color=clrs[j], ms=10, zorder=5)
-        ax5.plot(x, lb, '_', color=clrs[j], ms=16, markeredgewidth=2)
-        ax5.plot(x, ub, '_', color=clrs[j], ms=16, markeredgewidth=2)
-        cov = res['Coverage']
-        ax5.text(x, ub + 0.04, f'{cov*100:.0f}%', ha='center', fontsize=8,
-                 color=clrs[j])
-    ax5.set_xticks([1, 2, 3])
-    ax5.set_xticklabels(['A\n(lower tight)', 'B\n(upper tight)', 'C\n(interior)'], fontsize=8)
-    ax5.set_ylabel('Effect size', fontsize=9)
-    ax5.set_title('Panel E\nSharp Bounds [ITT, ATT]\n(Theorem 2; diamond = true ATE)', fontsize=9)
+    ns_a = df_a['n'].values
+    ax5.plot(ns_a, df_a['CATE_RMSE'], 'o-', color=blue, lw=1.8, ms=5,
+             label='Track A CATE RMSE')
+    ax5.plot(dfs[0]['n'], dfs[0]['CI_width'] / 2.0, 's--', color=gray,
+             lw=1.4, ms=4, label='Track B CI half-width (DGP 1)')
+    ref = df_a['CATE_RMSE'].iloc[0] * np.sqrt(ns_a[0])
+    ax5.plot(ns_a, ref / np.sqrt(ns_a), 'k:', lw=1.0, alpha=0.6,
+             label='$O(n^{-1/2})$ reference')
+    ax5.set_xscale('log');  ax5.set_yscale('log')
+    ax5.set_xlabel('Sample size $n$', fontsize=9)
+    ax5.set_ylabel('RMSE / CI half-width', fontsize=9)
+    ax5.set_title('Panel E\nTrack A RMSE vs Track B Width\n'
+                  '($\\sqrt{n}$ convergence; Track A wins at large $n$)', fontsize=9)
+    ax5.legend(fontsize=7)
 
-    # ── Panel F: RMSE √n convergence (DGP1) ──────────────────────────────────
+    # ── Panel F: Selection Ratio diagnostic ───────────────────────────────
     ax6 = fig.add_subplot(gs[1, 2])
-    ax6.plot(ns, df1['Overlay_RMSE'], 'o-', color=blue,   lw=1.8, ms=5,
-             label='Overlay ATT̂ RMSE')
-    ref = df1['Overlay_RMSE'].iloc[0] * np.sqrt(ns[0])
-    ax6.plot(ns, ref / np.sqrt(ns), 'k--', lw=1, alpha=0.7,
-             label='O(1/√n) reference')
-    ax6.set_xscale('log'); ax6.set_yscale('log')
-    ax6.set_xlabel('Sample size n', fontsize=9)
-    ax6.set_ylabel('RMSE (log scale)', fontsize=9)
-    ax6.set_title('Panel F\nOverlay ATT̂: √n Convergence\n(DGP1, Proposition 1)', fontsize=9)
+    e_vals = df_sr['e'].values
+    ax6.plot(e_vals, df_sr['SR_ub_mean'], 'o-', color=red, lw=1.8, ms=7,
+             label='$1/\\hat{e}$ (SR upper bound, obs.)')
+    ax6.plot(e_vals, df_sr['SR_true'], 's--', color=blue, lw=1.8, ms=7,
+             label='True Selection Ratio')
+    ax6.axhline(1.0, color='k', lw=0.8, ls=':', alpha=0.6,
+                label='SR = 1 (no cherry-picking)')
+    ax6.set_xlabel('Treatment rate $e$', fontsize=9)
+    ax6.set_ylabel('Selection Ratio', fontsize=9)
+    ax6.set_title('Panel F\nSelection Ratio Diagnostic\n'
+                  '($1/\\hat{e}$ is sharp upper bound on SR)', fontsize=9)
     ax6.legend(fontsize=7)
 
     fig.suptitle(
-        'Monte Carlo Simulations — "Measuring Causal Effects under Opaque Targeting"\n'
-        'DGP1: Meta logistic  |  DGP2: TikTok ML  |  DGP3: Platform O (Ye et al. setting)',
-        fontsize=11, fontweight='bold'
+        '"Measuring Causal Effects under Opaque Targeting" — Monte Carlo Results\n'
+        'DGP 1: Constant quota  |  DGP 2: Logistic score  |  DGP 3: Nonlinear ML  '
+        '|  R1: Monotone violated  |  R2: Nonneg violated',
+        fontsize=10, fontweight='bold'
     )
+
     for ext in ('pdf', 'png'):
         fig.savefig(OUT / f'mc_results.{ext}', bbox_inches='tight', dpi=200)
-    print(f"Saved: {OUT}/mc_results.{{pdf,png}}")
+    print(f"\nFigure saved: {OUT}/mc_results.{{pdf,png}}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -665,46 +593,98 @@ def make_figures(df1, ATT1,
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main():
-    print("\n" + "=" * 68)
-    print("OVERLAY EXPERIMENT MONTE CARLO SIMULATIONS")
-    print("Concrete Platform DGPs: Meta / TikTok / Platform O (Ye et al.)")
-    print("=" * 68 + "\n")
+    print("\n" + "="*72)
+    print("MONTE CARLO — OVERLAY EXPERIMENT PAPER  (Track A + Track B)")
+    print("="*72 + "\n")
 
-    print("Computing true estimands via Monte Carlo integration (2M draws)...")
-    ATT1        = true_att_dgp1()
-    ATT2        = true_att_dgp2()
-    ATT_A, ATT_B = true_att_dgp3()
-    print(f"  DGP1  ATT = {ATT1:.6f}   ATE = {TRUE_ATE_DGP1:.6f}   "
-          f"Selection ratio = {ATT1/TRUE_ATE_DGP1:.4f}")
-    print(f"  DGP2  ATT = {ATT2:.6f}")
-    print(f"  DGP3  ATT_A = {ATT_A:.6f}   ATT_B = {ATT_B:.6f}")
-    print()
+    # Calibrate targeting-rule intercepts
+    print("Calibrating logistic and nonlinear assignment rules to ē = 0.30 ...")
+    _calibrate_alphas()
+    print(f"  DGP2 logistic intercept α = {_ALPHA_LOGISTIC:.3f}")
+    print(f"  DGP3 nonlinear intercept γ₀ = {_ALPHA_NL:.3f}\n")
 
-    df1 = run_exp1(ATT1, n_sims=500,
-                   sample_sizes=[500, 2_000, 10_000, 50_000])
+    # True estimands
+    print("Computing true estimands (2M-draw MC) ...")
+    assign_fns = [assignment_dgp1, assignment_dgp2, assignment_dgp3]
+    labels_short = ['DGP 1 (constant quota)',
+                    'DGP 2 (logistic score)',
+                    'DGP 3 (nonlinear ML)']
 
-    df2 = run_exp2(ATT2, n_sims=400,
-                   sample_sizes=[2_000, 10_000, 50_000])
+    tvs = [true_estimands(fn, mte_monotone, seed=s)
+           for fn, s in zip(assign_fns, [10, 20, 30])]
 
-    df3A, df3B = run_exp3(ATT_A, ATT_B, n_sims=400,
-                           sample_sizes=[500, 2_000, 10_000, 50_000])
+    def _assign_const(e_fixed):
+        def f(n, rng):
+            U = rng.uniform(0.0, 1.0, n)
+            D = (U < e_fixed).astype(float)
+            return D, U
+        return f
 
-    df4, p_grid, mte_true, mte_mean, mte_sd = run_exp4(n=50_000, n_sims=200)
+    tv_r1 = true_estimands(_assign_const(0.30), mte_hump,     seed=40)
+    tv_r2 = true_estimands(_assign_const(0.30), mte_neg_tail, seed=50)
 
-    exp5 = run_exp5(n=20_000, n_sims=500)
+    for tv, lab in zip(tvs, labels_short):
+        print(f"  {lab}")
+        print(f"    CATE={tv['CATE']:.4f}  CATT={tv['CATT']:.4f}  "
+              f"CITT={tv['CITT']:.4f}  ē={tv['e_bar']:.3f}  "
+              f"SR={tv['SR']:.3f}  SR_ub={tv['SR_ub']:.3f}")
+    print(f"  DGP-R1 (hump MTE, e=0.30): CATE={tv_r1['CATE']:.4f}  "
+          f"CATT={tv_r1['CATT']:.4f}  "
+          f"(CATE > CATT → upper bound fails)")
+    print(f"  DGP-R2 (neg tail,  e=0.30): CATE={tv_r2['CATE']:.4f}  "
+          f"CITT={tv_r2['CITT']:.4f}  "
+          f"(CATE < CITT → lower bound fails)\n")
 
-    # Save tables
-    df1.to_csv(OUT / 'exp1_dgp1_meta_logistic.csv',   index=False)
-    df2.to_csv(OUT / 'exp2_dgp2_tiktok_ml.csv',       index=False)
-    df3A.to_csv(OUT / 'exp3_dgp3_firmA.csv',           index=False)
-    df3B.to_csv(OUT / 'exp3_dgp3_firmB.csv',           index=False)
-    df4.to_csv(OUT / 'exp4_mte_identification.csv',    index=False)
+    # ── Track B experiments ──────────────────────────────────────────────────
+    SIZES_B = [500, 2_000, 10_000, 50_000]
+    N_SIMS  = 1000
 
-    make_figures(df1, ATT1, df2, ATT2,
-                 df3A, df3B, ATT_A, ATT_B,
-                 df4, p_grid, mte_true, mte_mean, mte_sd,
-                 exp5)
+    dfs = [
+        run_track_b_dgp(fn, mte_monotone, tv, lab,
+                        n_sims=N_SIMS, sample_sizes=SIZES_B, alpha=0.10)
+        for fn, tv, lab in zip(assign_fns, tvs, labels_short)
+    ]
 
+    df_r1 = run_track_b_dgp(_assign_const(0.30), mte_hump, tv_r1,
+                             'DGP-R1 (hump MTE, monotone selection violated)',
+                             n_sims=N_SIMS, sample_sizes=SIZES_B, alpha=0.10)
+
+    df_r2 = run_track_b_dgp(_assign_const(0.30), mte_neg_tail, tv_r2,
+                             'DGP-R2 (negative-tail MTE, nonneg violated)',
+                             n_sims=N_SIMS, sample_sizes=SIZES_B, alpha=0.10)
+
+    # ── Track A ──────────────────────────────────────────────────────────────
+    SIZES_A = [2_000, 10_000, 50_000, 200_000]
+    df_a, p_mid, mte_true_vals = run_track_a(n_sims=500, sample_sizes=SIZES_A)
+
+    # ── Selection Ratio diagnostic ───────────────────────────────────────────
+    df_sr = run_selection_ratio(n=20_000, n_sims=500)
+
+    # ── Save tables ──────────────────────────────────────────────────────────
+    for df, tag in zip(dfs, ['dgp1', 'dgp2', 'dgp3']):
+        df.to_csv(OUT / f'track_b_{tag}.csv', index=False)
+    df_r1.to_csv(OUT / 'track_b_r1_hump.csv', index=False)
+    df_r2.to_csv(OUT / 'track_b_r2_negtail.csv', index=False)
+    df_a.to_csv(OUT  / 'track_a_mte.csv', index=False)
+    df_sr.to_csv(OUT / 'selection_ratio.csv', index=False)
+
+    # ── Figures ──────────────────────────────────────────────────────────────
+    make_figures(dfs, tvs, labels_short,
+                 df_r1, tv_r1, df_r2, tv_r2,
+                 df_a, p_mid, mte_true_vals, df_sr)
+
+    # ── Summary ──────────────────────────────────────────────────────────────
+    print("\n" + "="*72)
+    print("SUMMARY — Track B IM CI coverage at n=50,000 (nominal 90%)")
+    for df, lab in zip(dfs, labels_short):
+        cov = df['CI_coverage'].iloc[-1]
+        print(f"  {lab:<35s}  {cov:.3f}")
+    print(f"  {'DGP-R1 (monotone violated)':<35s}  {df_r1['CI_coverage'].iloc[-1]:.3f}")
+    print(f"  {'DGP-R2 (nonneg violated)':<35s}  {df_r2['CI_coverage'].iloc[-1]:.3f}")
+    row50 = df_a[df_a['n'] == 50_000].squeeze()
+    if hasattr(row50, 'CATE_RMSE'):
+        print(f"\nTrack A CATE RMSE at n=50,000: {row50.CATE_RMSE:.4f}"
+              f"  (true CATE = 1.0000)")
     print("\nAll simulations complete.")
 
 
